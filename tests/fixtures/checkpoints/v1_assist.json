@@ -1,0 +1,86 @@
+{
+  "app_version": "1.4.0",
+  "checkpoint_id": "1f1d832d-d293-60f0-8003-426f54b03e48",
+  "graph": "assist",
+  "metadata": {
+    "parents": {},
+    "source": "loop",
+    "step": 3
+  },
+  "state_schema": "assist-v1",
+  "thread_id": "assist:9ad9e959-9fb4-4d7f-b2b8-80be980555fb",
+  "values": {
+    "citations": [
+      "b8158c44-c567-4bcb-9f98-a14a0ab0d5f8",
+      "1a8bd0ef-f055-4663-963a-e7c406f41127"
+    ],
+    "dispute": {
+      "amount": "640.00",
+      "currency": "USD",
+      "id": "9ad9e959-9fb4-4d7f-b2b8-80be980555fb",
+      "network": "VISA",
+      "reason_code": "10.4",
+      "respond_by": "2026-12-02T09:33:56.533626+00:00",
+      "status": "EVIDENCE_GATHERING"
+    },
+    "evidence_kinds": [],
+    "history": [
+      {
+        "answer": "Recommend ACCEPT: no strong authentication evidence on the transaction. Relevant policy: \"For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3\". Question answered: Should we contest this dispute?",
+        "question": "Should we contest this dispute?"
+      }
+    ],
+    "policy_hits": [
+      {
+        "chunk_id": "b8158c44-c567-4bcb-9f98-a14a0ab0d5f8",
+        "document_title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)",
+        "scope": "network",
+        "score": 0.2529,
+        "text": "For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3-D Secure, because successful authentication shifts fraud liability to the issuer."
+      },
+      {
+        "chunk_id": "1a8bd0ef-f055-4663-963a-e7c406f41127",
+        "document_title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)",
+        "scope": "network",
+        "score": 0.1876,
+        "text": "Compelling evidence for card-absent fraud includes a full AVS match together with a CVV match, prior undisputed transactions on the same card from the same device or shipping address, and proof that the goods were delivered to the cardholder's billing address."
+      },
+      {
+        "chunk_id": "12949277-782a-4d2d-94b9-25611f46e051",
+        "document_title": "Network rules summary: response deadlines",
+        "scope": "network",
+        "score": 0.1158,
+        "text": "Merchants must respond to a dispute before the response deadline. In this service the default response window is 30 days for Visa and 45 days for Mastercard from the date the dispute was opened."
+      },
+      {
+        "chunk_id": "372a7606-a20d-4ea1-aa49-9797177d580e",
+        "document_title": "Northwind refund and dispute policy",
+        "scope": "tenant",
+        "score": 0.088,
+        "text": "Orders above 250 USD are shipped with signature on delivery. For fraud disputes on 3-D Secure authenticated orders, Northwind contests by default."
+      },
+      {
+        "chunk_id": "a71bc84c-64cd-4c09-b64b-16b4307e148c",
+        "document_title": "Network rules summary: response deadlines",
+        "scope": "network",
+        "score": 0.0844,
+        "text": "A dispute that is not answered before the deadline is lost by default and the cardholder keeps the credit. Disputes within 48 hours of their deadline should be escalated to an operations lead."
+      }
+    ],
+    "question": "Should we contest this dispute?",
+    "reason_family": "FRAUD",
+    "recommendation": "Recommend ACCEPT: no strong authentication evidence on the transaction. Relevant policy: \"For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3\". Question answered: Should we contest this dispute?",
+    "suggested_resolution": "ACCEPT",
+    "tenant_id": "northwind",
+    "transaction": {
+      "amount": "640.00",
+      "avs_result": "N",
+      "cvv_result": "N",
+      "delivery_status": "DELIVERED",
+      "delivery_tracking": "1Z999AA10123456785",
+      "ref": "NW-1002",
+      "refunded": "0.00",
+      "three_ds_authenticated": false
+    }
+  }
+}
