@@ -11,21 +11,27 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-MAX_EVIDENCE = 12
+MAX_EVIDENCE = 12  # policy passages (search hits)
+MAX_RECORDS = 24  # ledger facts and merchant uploads: records, not search hits
+RECORD_PREFIXES = ("ledger:", "merchant:")  # partition by id, so every copy of an id lands in the same partition
 
 
 def merge_evidence(old: Sequence[Mapping[str, Any]] | None, new: Sequence[Mapping[str, Any]] | None) -> list[Any]:
-    """Union by `id`, keeping the best copy of each id, sorted by (-score, id), capped at MAX_EVIDENCE.
+    """Union by `id`, keeping the best copy of each id, sorted by (-score, id). Records (ledger, merchant) and
+    policy passages are capped separately: records always score 1.0, so one shared cap let a case with many
+    uploads push every network rule out and abstain for ever (review R6).
 
     "Best" is a total order on the whole item — highest score, then smallest canonical JSON — so the result never
-    depends on which branch wrote first."""
+    depends on which branch wrote first; per-partition top-k keeps the reducer associative."""
     best: dict[str, Mapping[str, Any]] = {}
     for item in (*(old or ()), *(new or ())):
         cur = best.get(item["id"])
         if cur is None or _rank(item) < _rank(cur):
             best[item["id"]] = item
     ranked = sorted(best.values(), key=lambda e: (-e["score"], e["id"]))
-    return [dict(e) for e in ranked[:MAX_EVIDENCE]]
+    records = [e for e in ranked if str(e["id"]).startswith(RECORD_PREFIXES)][:MAX_RECORDS]
+    passages = [e for e in ranked if not str(e["id"]).startswith(RECORD_PREFIXES)][:MAX_EVIDENCE]
+    return [dict(e) for e in sorted((*records, *passages), key=lambda e: (-e["score"], e["id"]))]
 
 
 def _rank(item: Mapping[str, Any]) -> tuple[float, str]:

@@ -84,6 +84,7 @@ class TestVerify:
         ("kwargs", "rule"),
         [
             ({"resolution": "ACCEPT", "amount": "999.00", "cites": ["policy:n1"]}, "R1"),
+            ({"resolution": "ACCEPT", "amount": "10.00", "cites": ["policy:n1"]}, "R1"),  # review R8: ACCEPT = disputed
             ({"resolution": "PARTIAL", "amount": "100.00", "cites": ["policy:n1"], "code": "13.3"}, "R1"),
             ({"resolution": "PARTIAL", "amount": "50.00", "cites": ["policy:n1"]}, "R2"),
             (
@@ -162,6 +163,20 @@ class TestApprovalRoute:
         assert not self.r(Resolution.ACCEPT, "60.00", auto="50.00").auto
         assert not self.r(Resolution.ACCEPT, "20.00", auto="50.00", hours_left=10).auto
         assert not self.r(Resolution.CONTEST, None, auto="50.00").auto
+
+    def test_r9_refund_in_another_currency_goes_to_ops_lead_and_never_auto(self) -> None:
+        r = approval_policy.route(
+            resolution=Resolution.ACCEPT,
+            amount=Money.of("20.00", "GBP"),  # numerically below the 250 USD threshold and the 50 USD auto limit
+            threshold=USD("250.00"),
+            auto_approve_below=USD("50.00"),
+            respond_by=NOW + timedelta(days=20),
+            now=NOW,
+            urgent_window=timedelta(hours=48),
+            ttl=timedelta(hours=72),
+            deadline_margin=timedelta(hours=24),
+        )
+        assert r.required_role == "ops_lead" and not r.auto
 
     def test_request_info_has_no_route(self) -> None:
         with pytest.raises(ValueError):

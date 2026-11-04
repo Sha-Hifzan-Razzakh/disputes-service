@@ -6,7 +6,9 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from app.orchestration.reducers import MAX_EVIDENCE, OutcomeAlreadySet, merge_evidence, write_once
+from app.domain.reason_codes import ReasonFamily
+from app.domain.rules import grade_evidence
+from app.orchestration.reducers import MAX_EVIDENCE, MAX_RECORDS, OutcomeAlreadySet, merge_evidence, write_once
 
 evidence = st.fixed_dictionaries(
     {
@@ -39,7 +41,8 @@ def test_merge_is_idempotent_unique_sorted_and_capped(a: list[dict]) -> None:
     once = merge_evidence([], a)
     assert merge_evidence(once, once) == once
     ids = [e["id"] for e in once]
-    assert len(ids) == len(set(ids)) and len(once) <= MAX_EVIDENCE
+    records = [i for i in ids if i.startswith(("ledger:", "merchant:"))]
+    assert len(ids) == len(set(ids)) and len(records) <= MAX_RECORDS and len(ids) - len(records) <= MAX_EVIDENCE
     assert once == sorted(once, key=lambda e: (-e["score"], e["id"]))
 
 
@@ -65,3 +68,39 @@ def test_write_once() -> None:
     assert write_once("REFUNDED", None) == "REFUNDED"
     with pytest.raises(OutcomeAlreadySet):
         write_once("REFUNDED", "REJECTED")
+
+
+def test_r6_many_merchant_uploads_do_not_push_out_network_rules() -> None:
+    """Review R6: records score 1.0; with one shared cap, 4 ledger facts + 8 uploads filled it and every network
+    rule was dropped, so grading failed for ever."""
+    ledger = [
+        {"id": f"ledger:{k}", "source": "ledger", "scope": None, "kind": k, "title": k, "excerpt": "", "score": 1.0}
+        for k in ("three_ds", "avs_cvv", "delivery", "refunds")
+    ]
+    uploads = [
+        {
+            "id": f"merchant:m{i}",
+            "source": "merchant",
+            "scope": None,
+            "kind": "customer_comms",
+            "title": "",
+            "excerpt": "",
+            "score": 1.0,
+        }
+        for i in range(8)
+    ]
+    rules = [
+        {
+            "id": f"policy:n{i}",
+            "source": "policy",
+            "scope": "network",
+            "kind": "network_rule",
+            "title": "",
+            "excerpt": "",
+            "score": 0.5 + i / 100,
+        }
+        for i in range(10)
+    ]
+    merged = merge_evidence(merge_evidence([], ledger + uploads), rules)
+    assert sum(e["source"] == "policy" for e in merged) == 10 and len(merged) == 22
+    assert grade_evidence(ReasonFamily.FRAUD, merged, min_score=0.12).sufficient

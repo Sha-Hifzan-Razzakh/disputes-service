@@ -91,6 +91,8 @@ def verify_draft(
             v.append(f"R1: currency {amount.currency} differs from dispute currency {disputed.currency}")
         elif amount.amount > disputed.amount:
             v.append(f"R1: amount {amount} exceeds disputed {disputed}")
+        elif res is Resolution.ACCEPT and amount.amount != disputed.amount:
+            v.append(f"R1: ACCEPT refunds the disputed amount {disputed}, not {amount}")
         elif res is Resolution.PARTIAL and amount.amount >= disputed.amount:
             v.append(f"R1: partial amount {amount} must be below disputed {disputed}")
     if res not in reason.allowed:

@@ -61,7 +61,9 @@ async def test_fifty_branches_merge_deterministically_within_the_concurrency_cap
     first, store = await _run(monkeypatch)
     second, _ = await _run(monkeypatch)
     assert store.calls == 50 and store.peak <= 4
-    assert first == second and len(first) == 12  # capped, best scores first
+    policy = [e for e in first if e["source"] == "policy"]
+    assert first == second and len(first) == 16  # 4 ledger records + policy passages capped at 12 (review R6)
+    assert [e["id"] for e in policy] == [f"policy:c{i}" for i in range(49, 37, -1)]  # the 12 best of 50
     assert [e["id"] for e in first[:5]] == [
         "ledger:avs_cvv",
         "ledger:delivery",

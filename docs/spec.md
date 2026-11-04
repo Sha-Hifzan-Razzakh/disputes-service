@@ -58,7 +58,7 @@ Else → outcome `ABSTAINED_INSUFFICIENT_EVIDENCE`, list what is missing.
 D3 **Draft.** Choose ACCEPT, PARTIAL, CONTEST or REQUEST_INFO with amount, rationale and citations.
 
 D4 **Verification.** The draft passes only if all hold:
-- R1 amount > 0 and ≤ disputed amount; PARTIAL amount < disputed amount;
+- R1 amount > 0 and ≤ disputed amount; ACCEPT amount = disputed amount (D5); PARTIAL amount < disputed amount;
 - R2 resolution is allowed for the reason code;
 - R3 `now < respond_by`;
 - R4 prior refunds + this refund ≤ transaction amount;

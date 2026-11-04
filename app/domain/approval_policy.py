@@ -37,7 +37,10 @@ def route(
     if resolution is Resolution.REQUEST_INFO:
         raise ValueError("REQUEST_INFO needs no approval")
     refund = resolution in (Resolution.ACCEPT, Resolution.PARTIAL)
-    role = "ops_lead" if refund and amount is not None and amount.amount >= threshold.amount else "analyst"
+    # thresholds are in the tenant's currency; with no FX here, a refund in another currency is treated as large
+    # (ops lead, never auto-approved) instead of comparing 450 GBP with 500 USD as numbers (review R9)
+    foreign = refund and amount is not None and amount.currency != threshold.currency
+    role = "ops_lead" if refund and amount is not None and (foreign or amount.amount >= threshold.amount) else "analyst"
     urgent = respond_by - now < urgent_window
     if urgent and ROLE_RANK[role] < ROLE_RANK["ops_lead"]:
         role = "ops_lead"
@@ -46,6 +49,7 @@ def route(
         and not urgent
         and auto_approve_below is not None
         and amount is not None
+        and not foreign
         and amount.amount < auto_approve_below.amount
     )
     expires_at = min(now + ttl, respond_by - deadline_margin)
