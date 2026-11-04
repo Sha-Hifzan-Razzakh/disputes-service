@@ -34,7 +34,7 @@ Use cases and domain stay framework-free KEPT
 Contracts: 1 kept, 3 broken.
 
 
-Layers: api -> bootstrap -> (orchestration | infrastructure) -> application -> 
+Layers: api -> bootstrap -> (orchestration | infrastructure) -> application ->
 domain
 --------------------------------------------------------------------------------
 -----
