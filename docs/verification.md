@@ -5,8 +5,8 @@ suggested artifact was replaced, and the row says by what and why.
 
 | Gate | Command | Runs | Result at M4 |
 |---|---|---|---|
-| Unit + graph + API + integration | `uv run pytest --cov` | every PR | 263 passed, coverage 93 % (gate 90 %) |
-| Chaos | `uv run pytest -m chaos` | nightly (`.github/workflows/nightly.yml`) | 13 passed |
+| Unit + graph + API + integration | `uv run pytest --cov` | every PR | 298 passed, coverage 94 % (gate 90 %) — after the PR review fixes |
+| Chaos | `uv run pytest -m chaos` | nightly (`.github/workflows/nightly.yml`) | 14 passed |
 | Evals | `uv run python -m evals.run` | every PR (`ci.yml` job `evals`) | PASS, 189 cases; `docs/eval_report_2.0.0-rules.md` |
 | LLM evals | promptfoo, Ragas, LangSmith sync | nightly, each skips without its key | not run yet: no model key in this environment |
 | Load | `scripts/load_ramp.py` | by hand before a release | `docs/load_report.md`, `docs/capacity.md` |
@@ -81,6 +81,12 @@ suggested artifact was replaced, and the row says by what and why.
 Approvals for disputes with ≤ 24 h to the deadline were created already expired: TTL = `respond_by − 24 h` was in
 the past. Spec D7 amended (decision window, 15 min execution buffer), fixed in `domain/approval_policy.py`, unit
 test `test_close_to_the_deadline_the_approver_still_gets_time`.
+
+### Found by the PR review (stage 21)
+
+Two independent reviewers found 17 issues (4 high: double refunds across threads, stale case at execution,
+unreadable success recorded as failure, approvals not bound to the call). Each was fixed with a regression test
+(`test_r1_*` … `test_r16_*`); out-of-scope follow-ups are issues #2–#6.
 
 ### Known gaps
 
