@@ -1,0 +1,19 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+%% v1 assist graph, exported with draw_mermaid() from main@2462be0 (T03.2)
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	classify_reason(classify_reason)
+	retrieve_policy(retrieve_policy)
+	draft_recommendation(draft_recommendation)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> classify_reason;
+	classify_reason --> retrieve_policy;
+	retrieve_policy --> draft_recommendation;
+	draft_recommendation --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
