@@ -24,6 +24,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "asgi-lifespan>=2.1.0",
+    "hypothesis>=6.170.14",
+    "import-linter>=2.15",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
@@ -55,3 +57,40 @@ filterwarnings = ["ignore::jwt.warnings.InsecureKeyLengthWarning"]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: api -> bootstrap -> (orchestration | infrastructure) -> application -> domain"
+type = "layers"
+layers = [
+    "app.main",
+    "app.api",
+    "app.bootstrap",
+    "app.orchestration | app.infrastructure",
+    "app.application",
+    "app.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Graph code never touches vendors, drivers or the container"
+type = "forbidden"
+source_modules = ["app.orchestration"]
+forbidden_modules = ["psycopg", "psycopg_pool", "sqlalchemy", "langchain_anthropic", "anthropic", "httpx", "mcp", "fastapi"]
+
+[[tool.importlinter.contracts]]
+name = "API never builds adapters itself"
+type = "forbidden"
+source_modules = ["app.api"]
+forbidden_modules = ["app.infrastructure", "langgraph", "psycopg_pool"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Use cases and domain stay framework-free"
+type = "forbidden"
+source_modules = ["app.application", "app.domain"]
+forbidden_modules = ["langgraph", "langchain_core", "sqlalchemy", "fastapi", "psycopg", "httpx", "mcp"]
