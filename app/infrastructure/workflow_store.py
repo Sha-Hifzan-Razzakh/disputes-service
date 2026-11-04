@@ -324,6 +324,22 @@ class SqlSideEffectLedger:
                 .values(status=status, external_ref=external_ref, error=error)
             )
 
+    async def open_for(self, tenant_id: str, dispute_id: uuid.UUID) -> list[SideEffectRecord]:
+        async with transaction(self.sessions) as s:
+            rows = (
+                await s.scalars(
+                    select(SideEffectRow).where(
+                        SideEffectRow.tenant_id == tenant_id,
+                        SideEffectRow.dispute_id == dispute_id,
+                        SideEffectRow.status != "failed",
+                    )
+                )
+            ).all()
+        return [
+            SideEffectRecord(r.idempotency_key, r.tenant_id, r.dispute_id, r.kind, r.status, r.external_ref, r.error)
+            for r in rows
+        ]
+
     async def stale_unknown(self, older_than: datetime, *, limit: int) -> list[SideEffectRecord]:
         async with transaction(self.sessions) as s:
             rows = (

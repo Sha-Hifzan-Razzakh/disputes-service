@@ -81,9 +81,17 @@ def create_server(ledger: PaymentsLedger) -> MCPServer:
         ledger.faults.check("issue_refund")
         async with ledger.lock:
             done = ledger.refunds.get(idempotency_key)
+            request = {
+                "transaction_ref": transaction_ref,
+                "amount": str(_amount(amount)),
+                "currency": currency,
+                "dispute_id": dispute_id,
+            }
             if done is not None:
                 if done["tenant_id"] != tenant_id:
                     raise ToolFailure("forbidden", "idempotency key belongs to another tenant")
+                if done.get("request", request) != request:
+                    raise ToolFailure("idempotency_key_reused", "this key was used for a different refund")
                 return {**done["result"], "replayed": True}
             txn = ledger.transactions.get((tenant_id, transaction_ref))
             if txn is None:
@@ -104,7 +112,7 @@ def create_server(ledger: PaymentsLedger) -> MCPServer:
                 "refunded_total": str(txn["refunded"]),
                 "dispute_id": dispute_id,
             }
-            ledger.refunds[idempotency_key] = {"tenant_id": tenant_id, "result": result}
+            ledger.refunds[idempotency_key] = {"tenant_id": tenant_id, "result": result, "request": request}
             if ledger.faults.take_malformed("issue_refund"):
                 return {"status": "succeeded"}  # money moved, but the answer lacks external_ref
             return {**result, "replayed": False}

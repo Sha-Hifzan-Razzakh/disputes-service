@@ -269,6 +269,13 @@ class MemSideEffects:
     async def stale_unknown(self, older_than: datetime, *, limit: int) -> list[SideEffectRecord]:
         return [r for r in self.rows.values() if r.status in ("unknown", "pending")][:limit]
 
+    async def open_for(self, tenant_id: str, dispute_id: uuid.UUID) -> list[SideEffectRecord]:
+        return [
+            r
+            for r in self.rows.values()
+            if r.tenant_id == tenant_id and r.dispute_id == dispute_id and r.status != "failed"
+        ]
+
 
 @dataclass
 class MemAudit:
@@ -314,6 +321,7 @@ class FakeToolGateway:
     transient_failures: int = 0
     permanent_error: str | None = None
     malformed: bool = False
+    not_attempted: int = 0  # refused before sending (rate limit / unreachable): attempts 0, retryable
     delay_s: float = 0.0
     calls: list[dict[str, Any]] = field(default_factory=list)
     effects: dict[str, str] = field(default_factory=dict)  # idempotency key -> external ref
@@ -328,6 +336,9 @@ class FakeToolGateway:
         approval_id: uuid.UUID | None = None,
     ) -> ToolResult:
         self.calls.append({"tool": tool, "args": args, "tenant_id": tenant_id, "key": idempotency_key})
+        if self.not_attempted:
+            self.not_attempted -= 1
+            return ToolResult(ok=False, data={"attempts": 0}, retryable=True, error="rate_limited")
         if self.permanent_error:
             return ToolResult(ok=False, data={}, retryable=False, error=self.permanent_error)
         if self.transient_failures:

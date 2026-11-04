@@ -18,6 +18,7 @@ callers that broke a rule, systems that failed, and bugs. Only one class is retr
 | `InvalidResume` | `approve` node | no | 500 (a server-built resume value was wrong — bug) | four-eyes violated, malformed value |
 | `RunAborted` | runner (wraps `GraphRecursionError`) | no | 500 `run_aborted`, error log with `alert=true`, thread `failed` | loop bug |
 | `ThreadBusy` | `ThreadRegistry.exclusive` (advisory lock per thread) | no | 409 `thread_busy` | two resumes/recovers of one thread at once |
+| `SideEffectUnsettled` | `ResolutionRunner.start` | after reconciliation | 409 `side_effect_unsettled` | a refund/representment for the dispute is pending, unknown or succeeded (review R1) |
 | `FeatureDisabled` | start route, `Settings.resolution_enabled_for` | no | 403 `resolution_not_enabled` | tenant not in the rollout |
 | `TooManyRuns` | API `bounded_run` admission (`APP_MAX_CONCURRENT_RUNS`) | client, after `Retry-After` | 429 `too_many_runs` | overload |
 | `TimeoutError` | API `bounded_run` | no | 504 `run_timeout`; thread keeps its last checkpoint | slow model |

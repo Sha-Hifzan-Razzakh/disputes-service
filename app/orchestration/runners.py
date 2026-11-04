@@ -16,7 +16,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from app.application.errors import RunAborted, ThreadBusy
+from app.application.errors import RunAborted, SideEffectUnsettled, ThreadBusy
 from app.application.ports import CaseSnapshot
 from app.domain.errors import InvalidTransition, NotFound
 from app.orchestration.context import Ctx
@@ -95,6 +95,8 @@ class ResolutionRunner:
         snap = await s.cases.snapshot(ctx.tenant_id, dispute_id)  # NotFound for other tenants (404)
         if not snap.dispute.can_start_resolution:
             raise InvalidTransition(snap.dispute.status, "start_resolution")
+        if unsettled := await s.side_effects.open_for(ctx.tenant_id, dispute_id):
+            raise SideEffectUnsettled(str(dispute_id), [r.idempotency_key for r in unsettled])
         thread_id = await s.threads.start(
             tenant_id=ctx.tenant_id, dispute_id=dispute_id, graph="resolution", started_by=ctx.user_id
         )

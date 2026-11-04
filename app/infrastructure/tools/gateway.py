@@ -19,6 +19,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import structlog
@@ -71,6 +72,29 @@ def _truncate(value: Any) -> Any:
     if isinstance(value, list):
         return [_truncate(v) for v in value[:100]]
     return value
+
+
+def _bound(
+    summary: Mapping[str, Any], dispute_id: uuid.UUID, tool: str, args: Mapping[str, object], key: str
+) -> str | None:
+    """An approval authorises one call: this dispute, this tool, this idempotency key, this amount and evidence.
+    Reusing it with a fresh key, another dispute or another amount is refused (review R4)."""
+    if str(args.get("dispute_id")) != str(dispute_id):
+        return "approval is for another dispute"
+    if summary.get("tool") != tool:
+        return "approval does not cover this tool"
+    if summary.get("idempotency_key") != key:
+        return "approval is bound to another idempotency key"
+    if "amount" in args:
+        try:
+            same = Decimal(str(args["amount"])) == Decimal(str(summary.get("amount")))
+        except InvalidOperation:
+            same = False
+        if not same or args.get("currency") != summary.get("currency"):
+            return "amount differs from the approved summary"
+    if "evidence_ids" in args and list(args["evidence_ids"]) != list(summary.get("citations") or []):  # type: ignore[call-overload]
+        return "evidence differs from the approved summary"
+    return None
 
 
 class McpToolGateway:
@@ -179,7 +203,7 @@ class McpToolGateway:
             return "approval not found for this tenant"
         if ap.status not in ("approved", "auto"):
             return f"approval is {ap.status}"
-        return None
+        return _bound(ap.summary, ap.dispute_id, tool, args, key)
 
     async def _attempt(
         self, server: str, name: str, payload: dict[str, Any], output_keys: frozenset[str]
@@ -194,9 +218,10 @@ class McpToolGateway:
             text = _ERROR_PREFIX.sub("", str(result))  # "Error executing tool x: <code>: <message>"
             code = text.split(":", 1)[0].strip()
             return ("retryable_error" if code in RETRYABLE_CODES else "error"), {}, text[:500]
-        if not isinstance(result, dict) or not output_keys <= set(result):
-            keys = set(result) if isinstance(result, dict) else set()
-            return "malformed", {}, f"malformed_output: missing {sorted(output_keys - keys)}"
+        if not isinstance(result, dict):
+            return "malformed", {}, f"malformed_output: {str(result)[:120]}"
+        if not output_keys <= set(result):
+            return "malformed", {}, f"malformed_output: missing {sorted(output_keys - set(result))}"
         return "ok", _truncate(result), None
 
     async def _log(

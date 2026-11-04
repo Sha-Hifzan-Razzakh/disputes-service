@@ -20,7 +20,8 @@ the thread, so replays insert nothing new) and marks the thread `awaiting_approv
 
 ```json
 interrupt payload  {"v": 1, "approval_id": "…", "required_role": "ops_lead", "priority": "normal",
-                    "expires_at": "…", "summary": {"resolution": "ACCEPT", "amount": "640.00", "currency": "USD", "rationale": "…"}}
+                    "expires_at": "…", "summary": {"resolution": "ACCEPT", "amount": "640.00", "currency": "USD", "rationale": "…",
+                                "citations": […], "tool": "payments.issue_refund", "idempotency_key": "…"}}
 resume value       {"v": 1, "approval_id": "…", "decision": "approved|rejected|expired", "decided_by": "olu", "note": null}
 ```
 
@@ -44,6 +45,8 @@ never send it. `approve` re-validates it (version, approval id, decision, four-e
 | Concern | Mechanism | Proof |
 |---|---|---|
 | Two deciders at once | `UPDATE approvals … WHERE status='pending' AND expires_at > now() RETURNING` — one row wins; loser 409 `approval_decided` | `test_two_simultaneous_decisions_one_wins_one_side_effect` |
+| Approval reused for another call | gateway compares dispute, tool, key, amount and evidence with the summary | `test_r4_an_approval_authorises_exactly_one_call` |
+| Case changed while the approval waited | `execute` re-reads the case: dispute still resolvable, refunds unchanged, no other open side effect; otherwise nothing is sent | `test_r2_case_changed_after_approval_sends_nothing` |
 | Decision on a changed summary | client sends `summary_hash` it was shown; mismatch → 409 `approval_changed` | `test_role_four_eyes_and_stale_payload_are_refused` |
 | Wrong role / requester | 403 `forbidden` before any write | same test |
 | Expiry | sweeper: CAS to `expired`, resume with `expired` → `APPROVAL_EXPIRED`; later decisions → 410 | `test_expiry_by_sweeper_then_late_decision_is_410` |

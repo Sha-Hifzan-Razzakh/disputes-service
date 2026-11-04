@@ -15,6 +15,7 @@ from app.application.errors import (
     Forbidden,
     ResolutionInProgress,
     RunAborted,
+    SideEffectUnsettled,
     ThreadBusy,
     TooManyRuns,
 )
@@ -54,6 +55,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Forbidden)
     async def _fb(req: Request, e: Forbidden) -> JSONResponse:
         return _envelope(req, 403, "forbidden", str(e))
+
+    @app.exception_handler(SideEffectUnsettled)
+    async def _seu(req: Request, e: SideEffectUnsettled) -> JSONResponse:
+        return _envelope(req, 409, "side_effect_unsettled", str(e))
 
     @app.exception_handler(FeatureDisabled)
     async def _fd(req: Request, e: FeatureDisabled) -> JSONResponse:

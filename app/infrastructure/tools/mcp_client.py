@@ -77,7 +77,9 @@ class McpConnection:
         try:
             return False, json.loads(text)
         except json.JSONDecodeError:
-            return True, f"malformed_output: not JSON ({text[:80]!r})"
+            # the call succeeded but the answer is unreadable: NOT an error code (that would read as a clean
+            # business failure); the gateway treats a non-dict success as malformed → unknown for side effects
+            return False, f"not JSON: {text[:80]!r}"
 
     async def _reset(self) -> None:
         await self.close()

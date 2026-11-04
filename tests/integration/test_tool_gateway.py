@@ -11,7 +11,16 @@ from app.infrastructure.tools.gateway import TokenBucket
 from tests.graph.test_resolution_graph import dispute, sql
 
 
-async def _approval(app: Any, did: str, status: str = "approved", tenant: str = "northwind") -> uuid.UUID:
+async def _approval(
+    app: Any,
+    did: str,
+    status: str = "approved",
+    tenant: str = "northwind",
+    *,
+    key: str = "k",
+    amount: str = "10.00",
+    tool: str = "payments.issue_refund",
+) -> uuid.UUID:
     aid = uuid.uuid4()
     tid = f"resolution:{did}:{uuid.uuid4().hex[:6]}"
     sql(
@@ -32,7 +41,13 @@ async def _approval(app: Any, did: str, status: str = "approved", tenant: str = 
             required_role="analyst",
             priority="normal",
             status=status,
-            summary={},
+            summary={
+                "resolution": "PARTIAL",
+                "amount": amount,
+                "currency": "USD",
+                "tool": tool,
+                "idempotency_key": key,
+            },
             created_at=now,
             expires_at=now + timedelta(hours=1),
             decided_by="ben" if status != "pending" else None,
@@ -69,11 +84,15 @@ async def test_deny_by_default_and_guards_are_logged(client, auth, app, mcp_tool
 
 async def test_transient_failures_retry_with_the_same_key_then_succeed(client, auth, app, mcp_tools) -> None:
     did = await dispute(client, auth, "NW-1003", "13.1", "89.50")
-    aid = await _approval(app, did)
-    mcp_tools["ledger"].faults.fail_next("issue_refund", "temporarily_unavailable", times=2)
     key = uuid.uuid4().hex
+    aid = await _approval(app, did, key=key)
+    mcp_tools["ledger"].faults.fail_next("issue_refund", "temporarily_unavailable", times=2)
     res = await mcp_tools["gateway"].call(
-        "payments.issue_refund", dict(REFUND), tenant_id="northwind", idempotency_key=key, approval_id=aid
+        "payments.issue_refund",
+        REFUND | {"dispute_id": did},
+        tenant_id="northwind",
+        idempotency_key=key,
+        approval_id=aid,
     )
     assert res.ok and res.data["attempts"] == 3 and res.data["external_ref"].startswith("rf_")
     assert sql("SELECT attempt, status FROM tool_calls WHERE idempotency_key = %s ORDER BY attempt", key) == [
@@ -87,18 +106,25 @@ async def test_transient_failures_retry_with_the_same_key_then_succeed(client, a
 
 async def test_exhausted_retries_are_retryable_and_permanent_errors_are_not(client, auth, app, mcp_tools) -> None:
     did = await dispute(client, auth, "NW-1003", "13.1", "89.50")
-    aid = await _approval(app, did)
+    k1, k2 = uuid.uuid4().hex, uuid.uuid4().hex
+    aid = await _approval(app, did, key=k1)
     mcp_tools["ledger"].faults.fail_next("issue_refund", "temporarily_unavailable", times=3)
     res = await mcp_tools["gateway"].call(
-        "payments.issue_refund", dict(REFUND), tenant_id="northwind", idempotency_key=uuid.uuid4().hex, approval_id=aid
+        "payments.issue_refund",
+        REFUND | {"dispute_id": did},
+        tenant_id="northwind",
+        idempotency_key=k1,
+        approval_id=aid,
     )
     assert not res.ok and res.retryable and res.data["attempts"] == 3
+    did2 = await dispute(client, auth, "NW-1003", "13.1", "89.50")
+    big = await _approval(app, did2, key=k2, amount="999.00")
     res = await mcp_tools["gateway"].call(
         "payments.issue_refund",
-        dict(REFUND) | {"amount": "999.00"},
+        REFUND | {"amount": "999.00", "dispute_id": did2},
         tenant_id="northwind",
-        idempotency_key=uuid.uuid4().hex,
-        approval_id=aid,
+        idempotency_key=k2,
+        approval_id=big,
     )
     assert not res.ok and not res.retryable and res.error.startswith("refund_exceeds_capture")
 
@@ -153,3 +179,54 @@ async def test_unreachable_server_degrades_to_retryable_and_recovers_on_next_cal
     second = await gw.call("payments.get_refund", {"idempotency_key": "nope"}, tenant_id="northwind")
     assert second.ok and second.data["found"] is False and "payments.get_refund" not in gw.disabled
     await conn.close()
+
+
+async def test_r4_an_approval_authorises_exactly_one_call(client, auth, app, mcp_tools) -> None:
+    """Review R4: dispute, tool, key, amount and evidence must match what was approved; a reused key with other
+    arguments is refused by the provider itself."""
+    gw, ledger = mcp_tools["gateway"], mcp_tools["ledger"]
+    d1 = await dispute(client, auth, "NW-1003", "13.1", "89.50")
+    d2 = await dispute(client, auth, "NW-1003", "13.1", "89.50")
+    key = uuid.uuid4().hex
+    aid = await _approval(app, d1, key=key, amount="44.75")
+    ok = REFUND | {"dispute_id": d1, "amount": "44.75"}
+    cases = [
+        (ok | {"dispute_id": d2}, key, "another dispute"),
+        (ok | {"amount": "640.00"}, key, "amount differs"),
+        (ok | {"currency": "EUR"}, key, "amount differs"),
+        (ok, uuid.uuid4().hex, "another idempotency key"),
+    ]
+    for args, k, why in cases:
+        res = await gw.call("payments.issue_refund", args, tenant_id="northwind", idempotency_key=k, approval_id=aid)
+        assert not res.ok and not res.retryable and why in (res.error or ""), (args, res)
+    rep = await gw.call(
+        "network.submit_representment",
+        {"dispute_id": d1, "network": "VISA", "reason_code": "13.1", "evidence_ids": ["e"], "rationale": "r"},
+        tenant_id="northwind",
+        idempotency_key=key,
+        approval_id=aid,
+    )
+    assert "does not cover this tool" in (rep.error or "")
+    assert ledger.refunds == {}
+    first = await gw.call("payments.issue_refund", ok, tenant_id="northwind", idempotency_key=key, approval_id=aid)
+    again = await gw.call("payments.issue_refund", ok, tenant_id="northwind", idempotency_key=key, approval_id=aid)
+    assert first.ok and again.ok and again.data["replayed"] is True and len(ledger.refunds) == 1
+
+
+async def test_r4_provider_refuses_a_reused_key_with_other_arguments(mcp_tools) -> None:
+    from mcp.client.client import Client
+
+    from mcp_servers.payments import create_server
+
+    srv = create_server(mcp_tools["ledger"])
+    args = {
+        "tenant_id": "northwind",
+        "transaction_ref": "NW-1003",
+        "currency": "USD",
+        "dispute_id": "d1",
+        "idempotency_key": "same",
+    }
+    async with Client(srv) as c:
+        assert not (await c.call_tool("issue_refund", args | {"amount": "10.00"})).is_error
+        res = await c.call_tool("issue_refund", args | {"amount": "20.00"})
+    assert res.is_error and "idempotency_key_reused" in "".join(getattr(x, "text", "") for x in res.content)

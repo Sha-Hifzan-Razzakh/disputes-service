@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
@@ -19,6 +20,7 @@ from langgraph.types import Command, RetryPolicy, interrupt
 from app.application.case import case_to_state
 from app.application.ports import ApprovalRecord, SideEffectRecord, TransientError
 from app.domain import approval_policy
+from app.domain.dispute import RESOLVABLE
 from app.domain.money import Money
 from app.domain.reason_codes import Resolution, lookup
 from app.domain.rules import verify_draft
@@ -246,6 +248,8 @@ async def request_approval(state: ResolutionState, runtime: Runtime[Ctx]) -> dic
     aid = uuid.uuid5(APPROVAL_NS, tid)  # stable across replays → insert is idempotent
     now = s.clock.now()
     summary: dict[str, object] = {k: draft[k] for k in ("resolution", "amount", "currency", "rationale", "citations")}
+    # what the approval authorises, exactly: the gateway refuses any call that differs (review R4)
+    summary |= {"tool": a["tool"], "idempotency_key": a["idempotency_key"]}
     auto = a["auto"]
     await s.approvals.create(
         ApprovalRecord(
@@ -335,14 +339,9 @@ async def execute(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[str, An
     a, draft, d, c = state["action"], state["draft"], state["case"]["dispute"], state["case"]
     key = a["idempotency_key"] or ""
     if s.clock.now() >= datetime.fromisoformat(d["respond_by"]):
-        return {
-            "execution": {
-                "status": "failed",
-                "external_ref": None,
-                "attempts": 0,
-                "error": "R3: response deadline passed before execution",
-            }
-        }
+        return _not_executed("R3: response deadline passed before execution")
+    if changed := await _case_changed(state, runtime):
+        return _not_executed(f"case changed after approval: {changed}; nothing was sent")
     rec = await s.side_effects.reserve(SideEffectRecord(key, ctx.tenant_id, uuid.UUID(d["id"]), a["kind"], "pending"))
     if rec.status == "succeeded":
         return {"execution": {"status": "succeeded", "external_ref": rec.external_ref, "attempts": 0, "error": None}}
@@ -361,14 +360,17 @@ async def execute(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[str, An
             "evidence_ids": draft["citations"],
             "rationale": draft["rationale"],
         }
-    approval_id = state["approval"]["approval_id"]
     result = await s.tools.call(
         a["tool"] or "",
         args,
         tenant_id=ctx.tenant_id,
         idempotency_key=key,
-        approval_id=None if approval_id == "auto" else uuid.UUID(approval_id),
+        approval_id=uuid.UUID(state["approval"]["approval_id"]),
     )
+    if not result.ok and result.retryable and result.data.get("attempts") == 0:
+        # refused before anything was sent (rate limit, server unreachable): safe to retry the node, and the
+        # approval must not be spent on an "unknown" that never happened
+        raise TransientError(f"{a['tool']} not attempted: {result.error}")
     ref = result.data.get("external_ref") if result.ok else None
     status = "succeeded" if result.ok else ("unknown" if result.retryable else "failed")
     await s.side_effects.finish(key, status=status, external_ref=str(ref) if ref else None, error=result.error)
@@ -381,6 +383,30 @@ async def execute(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[str, An
             "error": result.error,
         }
     }
+
+
+def _not_executed(error: str) -> dict[str, Any]:
+    return {"execution": {"status": "failed", "external_ref": None, "attempts": 0, "error": error}}
+
+
+async def _case_changed(state: ResolutionState, runtime: Runtime[Ctx]) -> str | None:
+    """Re-read the case right before money moves: the approval may be days old, and v1 endpoints or another
+    resolution may have resolved the dispute, withdrawn it, or refunded the transaction in the meantime."""
+    s, ctx = runtime.context.services, runtime.context
+    then = state["case"]
+    now = case_to_state(await s.cases.snapshot(ctx.tenant_id, uuid.UUID(state["dispute_id"])))
+    if now["dispute"]["status"] not in {st.value for st in RESOLVABLE}:
+        return f"dispute is {now['dispute']['status']}"
+    if Decimal(now["transaction"]["refunded"]) != Decimal(then["transaction"]["refunded"]):
+        return f"transaction refunds changed from {then['transaction']['refunded']} to {now['transaction']['refunded']}"
+    others = [
+        r
+        for r in await s.side_effects.open_for(ctx.tenant_id, uuid.UUID(state["dispute_id"]))
+        if r.idempotency_key != state["action"]["idempotency_key"]
+    ]
+    if others:
+        return f"another {others[0].kind} for this dispute is {others[0].status}"
+    return None
 
 
 async def apply_resolution(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[str, Any]:

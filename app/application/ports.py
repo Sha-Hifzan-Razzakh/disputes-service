@@ -241,6 +241,9 @@ class SideEffectLedger(Protocol):
 
     async def finish(self, key: str, *, status: str, external_ref: str | None, error: str | None) -> None: ...
     async def stale_unknown(self, older_than: datetime, *, limit: int) -> list[SideEffectRecord]: ...
+    async def open_for(self, tenant_id: str, dispute_id: uuid.UUID) -> list[SideEffectRecord]:
+        """Side effects of this dispute that may have moved money: pending, unknown or succeeded."""
+        ...
 
 
 class AuditLog(Protocol):

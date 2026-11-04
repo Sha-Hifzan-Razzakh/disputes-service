@@ -27,7 +27,9 @@ simulate the payments ledger (seeded from `seeds/data.py`) and the card-network 
    tool is disabled (`tool_disabled` alert) until `scripts/pin_tool_schemas.py --write` is reviewed.
 3. **Tenant** — caller tenant comes from `Ctx`; arguments carrying another tenant → `denied`; the gateway injects
    `tenant_id` itself.
-4. **Side-effect guard** — idempotency key present and the approval row is `approved` or `auto` for this tenant.
+4. **Side-effect guard** — idempotency key present and the approval row is `approved` or `auto` for this tenant,
+   **and bound to this exact call**: same dispute, tool, idempotency key, amount/currency and evidence as the
+   approved summary (review R4). Providers also refuse a known key with different arguments (`idempotency_key_reused`).
 5. **Rate limit** — token bucket per tenant per tool (`APP_TOOL_RATE_PER_S`, `APP_TOOL_BURST`).
 6. **Call** — one long-lived MCP session per server; timeout `APP_TOOL_TIMEOUT_S`; transport errors and retryable
    codes retried up to `APP_TOOL_MAX_ATTEMPTS` with backoff and the **same key**.

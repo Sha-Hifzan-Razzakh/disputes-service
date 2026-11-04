@@ -46,6 +46,16 @@ class ThreadBusy(Exception):
     """Another worker is running this thread right now (advisory lock held)."""
 
 
+class SideEffectUnsettled(Exception):
+    """A refund or representment for this dispute may already have happened (pending, unknown or succeeded without
+    the dispute being resolved). A new resolution would get a new idempotency key and could pay twice, so it waits
+    for reconciliation or an operator."""
+
+    def __init__(self, dispute_id: str, keys: list[str]) -> None:
+        super().__init__(f"dispute {dispute_id} has an unsettled side effect ({len(keys)}); reconcile it first")
+        self.keys = keys
+
+
 class FeatureDisabled(Exception):
     """The rollout flag does not cover this tenant (APP_RESOLUTION_TENANTS)."""
 

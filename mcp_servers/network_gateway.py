@@ -49,9 +49,17 @@ def create_server(store: NetworkGatewayStore) -> MCPServer:
             raise ToolFailure("rationale_too_long", "max 4000 characters")
         async with store.lock:
             done = store.submissions.get(idempotency_key)
+            request = {
+                "dispute_id": dispute_id,
+                "network": network,
+                "reason_code": reason_code,
+                "evidence_ids": list(evidence_ids),
+            }
             if done is not None:
                 if done["tenant_id"] != tenant_id:
                     raise ToolFailure("forbidden", "idempotency key belongs to another tenant")
+                if done.get("request", request) != request:
+                    raise ToolFailure("idempotency_key_reused", "this key was used for a different submission")
                 return {**done["result"], "replayed": True}
             if dry_run:
                 return {"dry_run": True, "accepted": True}
@@ -62,7 +70,7 @@ def create_server(store: NetworkGatewayStore) -> MCPServer:
                 "network": network,
                 "evidence_count": len(evidence_ids),
             }
-            store.submissions[idempotency_key] = {"tenant_id": tenant_id, "result": result}
+            store.submissions[idempotency_key] = {"tenant_id": tenant_id, "result": result, "request": request}
             return {**result, "replayed": False}
 
     @srv.tool(description="Look a representment up by idempotency key (reconciliation).")
