@@ -116,23 +116,23 @@ class McpToolGateway:
         self.max_attempts = max_attempts
         self.backoff_s = backoff_s
         self.disabled = dict(disabled or {})  # tool -> reason (schema pin mismatch)
-        self._verified: set[str] = set()
+        self._verified: dict[str, int] = {}  # server -> connection generation whose schemas were checked
 
     async def verify(self, server: str) -> bool:
-        """Connect (if needed) and compare the server's live schemas with the pins, once per server. A failed
-        connect leaves the server unverified; the next call tries again."""
-        if server in self._verified:
-            return True
+        """Connect if needed and compare the live schemas with the pins once per session (each reconnect is a new
+        generation and is checked again, review R10). False = cannot connect; nothing may be sent then."""
         conn = self.connections[server]
         try:
             if not conn.started:
                 await conn.start()
         except ToolTransportError:
             return False
+        if self._verified.get(server) == conn.generation:
+            return True
         for tool, reason in pin_mismatches({server: conn.schemas}).items():
             self.disabled[tool] = reason
             structlog.get_logger().error("tool_disabled", tool=tool, reason=reason, alert=True)
-        self._verified.add(server)
+        self._verified[server] = conn.generation
         return True
 
     async def call(
@@ -150,6 +150,13 @@ class McpToolGateway:
                 await self._log(tool, tenant_id, idempotency_key, approval_id, 0, "denied", 0, args, denied)
                 span.set_attribute("tool.status", "denied")
                 return ToolResult(ok=False, data={"attempts": 0}, retryable=False, error=f"denied: {denied}")
+            if not await self.verify(POLICY[tool].server):
+                await self._log(tool, tenant_id, idempotency_key, approval_id, 0, "denied", 0, args, "unreachable")
+                return ToolResult(ok=False, data={"attempts": 0}, retryable=True, error=f"{tool}: cannot connect")
+            if tool in self.disabled:  # a (re)connect may have found a schema that differs from the pin
+                return ToolResult(
+                    ok=False, data={"attempts": 0}, error=f"denied: tool {tool!r} disabled: {self.disabled[tool]}"
+                )
             if not self.limiter.allow((tenant_id, tool)):
                 await self._log(tool, tenant_id, idempotency_key, approval_id, 0, "denied", 0, args, "rate_limited")
                 return ToolResult(ok=False, data={"attempts": 0}, retryable=True, error="rate_limited")
@@ -159,11 +166,20 @@ class McpToolGateway:
                 payload["idempotency_key"] = idempotency_key
             error: str | None = "no attempt made"
             for attempt in range(1, self.max_attempts + 1):
+                if attempt > 1 and (not await self.verify(rule.server) or tool in self.disabled):
+                    # reconnect failed or the new session's schema differs from the pin: send nothing more
+                    error = f"{error}; then: {self.disabled.get(tool, 'cannot reconnect')}"
+                    return ToolResult(ok=False, data={"attempts": attempt - 1}, retryable=True, error=error)
                 t0 = time.perf_counter()
                 status, data, error = await self._attempt(rule.server, rule.name, payload, rule.output_keys)
                 ms = int((time.perf_counter() - t0) * 1000)
                 logged = "error" if status == "malformed" else status
-                await self._log(tool, tenant_id, idempotency_key, approval_id, attempt, logged, ms, payload, error)
+                try:
+                    await self._log(tool, tenant_id, idempotency_key, approval_id, attempt, logged, ms, payload, error)
+                except Exception:  # the call already happened: losing an audit row must not hide its result (R12)
+                    structlog.get_logger().error(
+                        "tool_call_log_failed", tool=tool, attempt=attempt, status=status, alert=True, exc_info=True
+                    )
                 span.set_attribute("tool.attempts", attempt)
                 span.set_attribute("tool.status", status)
                 if status == "ok":
@@ -186,7 +202,6 @@ class McpToolGateway:
             return f"tool {tool!r} is not allowed"
         if rule.server not in self.connections:
             return f"server {rule.server!r} not configured"
-        await self.verify(rule.server)  # unreachable → stays unverified; the attempt below reports it as retryable
         if tool in self.disabled:
             return f"tool {tool!r} disabled: {self.disabled[tool]}"
         if "tenant_id" in args and args["tenant_id"] != tenant_id:

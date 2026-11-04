@@ -23,15 +23,16 @@ simulate the payments ledger (seeded from `seeds/data.py`) and the card-network 
 ## Gateway pipeline (T12.4–T12.11) — `app/infrastructure/tools/gateway.py`
 
 1. **Policy** — deny by default (`policy.POLICY`); unknown tool → `denied`.
-2. **Pins** — on first connect per server the live input schemas are compared with `PINNED_SCHEMAS`; a changed
-   tool is disabled (`tool_disabled` alert) until `scripts/pin_tool_schemas.py --write` is reviewed.
+2. **Pins** — on every connect and reconnect (each session generation) the live input schemas are compared with
+   `PINNED_SCHEMAS`; nothing is sent to a server whose session has not been checked. A changed tool is disabled (`tool_disabled` alert) until `scripts/pin_tool_schemas.py --write` is reviewed.
 3. **Tenant** — caller tenant comes from `Ctx`; arguments carrying another tenant → `denied`; the gateway injects
    `tenant_id` itself.
 4. **Side-effect guard** — idempotency key present and the approval row is `approved` or `auto` for this tenant,
    **and bound to this exact call**: same dispute, tool, idempotency key, amount/currency and evidence as the
    approved summary (review R4). Providers also refuse a known key with different arguments (`idempotency_key_reused`).
 5. **Rate limit** — token bucket per tenant per tool (`APP_TOOL_RATE_PER_S`, `APP_TOOL_BURST`).
-6. **Call** — one long-lived MCP session per server; timeout `APP_TOOL_TIMEOUT_S`; transport errors and retryable
+6. **Call** — one long-lived MCP session per server, owned by one task (opened and closed there, so shutdown and
+   reconnects never leak it); calls never connect implicitly; timeout `APP_TOOL_TIMEOUT_S`; transport errors and retryable
    codes retried up to `APP_TOOL_MAX_ATTEMPTS` with backoff and the **same key**.
 7. **Output** — must be an object with the required keys; strings truncated to 2 000 chars, lists to 100 items.
 8. **Log** — one `tool_calls` row per attempt (status ok / error / retryable_error / denied, latency, sha256 of the

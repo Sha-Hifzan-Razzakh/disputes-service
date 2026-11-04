@@ -64,7 +64,8 @@ async def test_gateway_classifies_provider_failures(behaviour: str, ok: bool, re
         max_attempts=2,
         backoff_s=0.0,
     )
-    gw._verified.add("payments")  # schema pins are covered elsewhere; this server is a stand-in
+    await conn.start()
+    gw._verified["payments"] = conn.generation  # schema pins are covered elsewhere; this server is a stand-in
     res = await gw.call("payments.get_refund", {"idempotency_key": "k"}, tenant_id="t")
     assert (res.ok, res.retryable, res.data["attempts"]) == (ok, retryable, attempts), res
     await conn.close()
@@ -131,9 +132,60 @@ async def test_r3_unreadable_success_from_a_side_effect_is_unknown_not_failed() 
         max_attempts=3,
         backoff_s=0.0,
     )
-    gw._verified.add("payments")
+    await conn.start()
+    gw._verified["payments"] = conn.generation
     args = {"transaction_ref": "T", "amount": "10.00", "currency": "USD", "dispute_id": str(did)}
     res = await gw.call("payments.issue_refund", args, tenant_id="t", idempotency_key="k", approval_id=uuid.uuid4())
     assert not res.ok and res.retryable and res.data["attempts"] == 1 and fake.calls == 1
     assert "malformed_output" in (res.error or "")
+    await conn.close()
+
+
+async def test_r11_session_is_owned_by_one_task_and_closes_from_any_task() -> None:
+    """Review R11: open in one task, close in another, without leaking the session; concurrent first calls open
+    exactly one session."""
+    from contextlib import asynccontextmanager
+
+    entered, exited = [], []
+
+    @asynccontextmanager
+    async def factory():  # type: ignore[no-untyped-def]
+        entered.append(1)
+        async with Client(server("fine")) as c:
+            yield c
+        exited.append(1)
+
+    conn = McpConnection("payments", factory, timeout_s=1.0)
+    await asyncio.gather(*(asyncio.create_task(conn.start()) for _ in range(5)))
+    assert len(entered) == 1 and conn.started and conn.generation == 1
+    assert (await conn.call("get_refund", {"tenant_id": "t", "idempotency_key": "k"})) == (False, {"found": False})
+    await asyncio.create_task(conn.close())  # a different task than the opener
+    assert exited == [1] and not conn.started
+    assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("mcp-session:")]
+    with pytest.raises(ToolTransportError, match="not connected"):  # calls never connect implicitly
+        await conn.call("get_refund", {"tenant_id": "t", "idempotency_key": "k"})
+
+
+class _LogFailsAfterSuccess(McpToolGateway):
+    async def _log(self, *args: Any, **kwargs: Any) -> None:
+        if args[5] == "ok":
+            from app.application.ports import TransientError
+
+            raise TransientError("connection reset while writing the audit row")
+
+
+async def test_r12_audit_row_failure_does_not_hide_a_successful_call() -> None:
+    conn = McpConnection("payments", lambda: Client(server("fine")), timeout_s=1.0)
+    gw = _LogFailsAfterSuccess(
+        connections={"payments": conn},
+        approvals=_NoApprovals(),
+        sessions=None,  # type: ignore[arg-type]
+        limiter=TokenBucket(100, 100),
+        max_attempts=2,
+        backoff_s=0.0,
+    )
+    await conn.start()
+    gw._verified["payments"] = conn.generation
+    res = await gw.call("payments.get_refund", {"idempotency_key": "k"}, tenant_id="t")
+    assert res.ok and res.data["found"] is False
     await conn.close()

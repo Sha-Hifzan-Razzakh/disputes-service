@@ -230,3 +230,26 @@ async def test_r4_provider_refuses_a_reused_key_with_other_arguments(mcp_tools) 
         assert not (await c.call_tool("issue_refund", args | {"amount": "10.00"})).is_error
         res = await c.call_tool("issue_refund", args | {"amount": "20.00"})
     assert res.is_error and "idempotency_key_reused" in "".join(getattr(x, "text", "") for x in res.content)
+
+
+async def test_r10_schema_pins_are_checked_again_after_every_reconnect(app, mcp_tools) -> None:
+    """Review R10: a provider that redeploys with a different schema while we are connected is caught on the
+    reconnect, and nothing is sent to it."""
+    from mcp.client.client import Client
+    from mcp.server.mcpserver import MCPServer
+
+    gw, conn = mcp_tools["gateway"], mcp_tools["connections"]["payments"]
+    assert (await gw.call("payments.get_refund", {"idempotency_key": "nope"}, tenant_id="northwind")).ok
+    changed = MCPServer(name="payments")
+    sent: list[dict] = []
+
+    @changed.tool()
+    async def get_refund(tenant_id: str, idempotency_key: str, amount_minor_units: int = 0) -> dict:
+        sent.append({"idempotency_key": idempotency_key})
+        return {"found": False}
+
+    conn._factory = lambda: Client(changed)
+    await conn.close()  # e.g. the stream dropped; the next call reconnects
+    res = await gw.call("payments.get_refund", {"idempotency_key": "nope"}, tenant_id="northwind")
+    assert not res.ok and "disabled" in (res.error or "") and sent == []
+    assert "payments.issue_refund" in gw.disabled and conn.generation == 2
