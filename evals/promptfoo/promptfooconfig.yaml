@@ -1,0 +1,19 @@
+# Prompt regression + red-team suite for the LLM resolution drafter (T17.9).
+# Run from the repo root with ANTHROPIC_API_KEY set and the venv active (the generator imports app/):
+#   PYTHONPATH=. npx promptfoo@latest eval -c evals/promptfoo/promptfooconfig.yaml
+# Offline check of this suite (generator + assertion): tests/unit/test_promptfoo_suite.py
+description: disputes-service resolution drafter
+prompts:
+  - "{{prompt}}"
+providers:
+  - id: anthropic:messages:claude-sonnet-4-5   # keep in step with APP_MODEL_NAME
+    config:
+      temperature: 0
+      max_tokens: 600
+defaultTest:
+  assert:
+    - type: python
+      value: file://assert_draft.py
+    - type: latency
+      threshold: 20000   # APP_MODEL_TIMEOUT_S
+tests: file://cases.py:generate_tests

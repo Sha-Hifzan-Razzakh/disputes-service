@@ -36,7 +36,7 @@ recommended resolution grounded in network-rule summaries and the merchant's own
 
 | Method | Path | Role | Notes |
 |---|---|---|---|
-| POST | `/v2/disputes/{id}/resolutions` | analyst | 201 terminal outcome, 202 awaiting approval, 409 in progress / not resolvable |
+| POST | `/v2/disputes/{id}/resolutions` | analyst | 201 terminal outcome, 202 awaiting approval, 409 in progress / not resolvable, 429 overloaded (`Retry-After`) |
 | GET | `/v2/disputes/{id}/resolutions/{thread_id}` | analyst | status, outcome, draft, approval, execution, next nodes |
 | GET | `/v2/disputes/{id}/resolutions/{thread_id}/stream` | analyst | SSE state events |
 | GET | `/v2/approvals` · `/v2/approvals/{id}` | analyst+ | queue filtered by role, excluding own requests |
@@ -85,9 +85,16 @@ uv run python scripts/mint_token.py --tenant northwind --role analyst   # bearer
 ## Test
 
 ```bash
-uv run pytest            # needs local Postgres; creates and drops database disputes_test
-uv run ruff check . && uv run mypy app && uv run lint-imports
+uv run pytest                    # unit, graph, API, integration; needs local Postgres (database disputes_test)
+uv run pytest -m chaos           # fault injection (nightly in CI)
+uv run python -m evals.run       # golden_v1 (189 cases) through the real graph; gate = evals/thresholds.yaml + baseline
+uv run python scripts/load_ramp.py --help   # load ramp against a running server (docs/load_report.md)
+uv run ruff check . && uv run mypy app seeds scripts mcp_servers evals && uv run lint-imports
 ```
+
+Coverage gate 90 % (`[tool.coverage.report]`). Model-backed evals are key-gated and nightly:
+`evals/promptfoo/` (prompt regression + red team), `evals/ragas_faithfulness.py`, `evals/langsmith_sync.py`.
+What each test layer proves, task by task: `docs/verification.md`.
 
 Layer rules (`[tool.importlinter]` in `pyproject.toml`): api → bootstrap → (orchestration | infrastructure) →
 application → domain. Graph code never imports drivers, vendors or the container; the API never names an adapter.
@@ -103,4 +110,5 @@ Ops scripts: `scripts/checkpoint_setup.py` (deploy), `scripts/prune_checkpoints.
 discovery (`docs/orientation.md`, `docs/state_inventory.md`, `docs/coupling.md`, `docs/impact.md`) ·
 design (`docs/allocation.md`, `docs/c4/`, `docs/adr/`, `docs/graph_design.md`, `docs/graph_target.mmd`,
 `docs/runtime.md`, `docs/state_changelog.md`) · build (`docs/errors.md`, `docs/recovery.md`,
-`docs/graph_after_*.mmd`) · `docs/approvals.md`, `docs/tools.md`, `docs/observability.md`, `ops/`.
+`docs/graph_after_*.mmd`) · `docs/approvals.md`, `docs/tools.md`, `docs/observability.md`, `ops/` · verify (`docs/verification.md`,
+`docs/load_report.md`, `docs/capacity.md`, `docs/eval_report_2.0.0-rules.md`, `evals/`).

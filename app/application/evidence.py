@@ -7,7 +7,7 @@ evidence when the fact favours the merchant: e.g. `three_ds_result` when 3-D Sec
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -64,7 +64,7 @@ def ledger_evidence(txn: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def merchant_evidence(items: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def merchant_evidence(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [
         _item(f"merchant:{e['id']}", "merchant", str(e["kind"]), f"Merchant upload: {e['kind']}", str(e["description"]))
         for e in items

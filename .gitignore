@@ -8,3 +8,5 @@ __pycache__/
 .coverage
 htmlcov/
 dist/
+evals/reports/*
+!evals/reports/.gitkeep

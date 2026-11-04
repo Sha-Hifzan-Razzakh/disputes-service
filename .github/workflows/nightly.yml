@@ -1,0 +1,59 @@
+name: nightly
+# Slow and paid suites, kept out of the PR path:
+#   chaos   - fault injection (model, vector store, DB, tools, checkpointer, crash/resume, fan-out, concurrent resume)
+#   llm-evals - promptfoo prompt + red-team suite, Ragas faithfulness, LangSmith dataset sync; each skips without its key
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest -q -m chaos
+        env:
+          APP_TEST_DSN: postgresql://postgres@localhost:5432
+
+  llm-evals:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: uv sync --frozen
+      - name: promptfoo (prompt regression + red team)
+        if: env.ANTHROPIC_API_KEY != ''
+        run: |
+          source .venv/bin/activate
+          PYTHONPATH=. npx -y promptfoo@0.120.0 eval -c evals/promptfoo/promptfooconfig.yaml -o promptfoo.json
+      - name: Ragas faithfulness
+        run: uv pip install ragas && uv run python -m evals.ragas_faithfulness
+      - name: LangSmith dataset sync
+        run: uv run python -m evals.langsmith_sync
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-evals
+          path: promptfoo.json
+          if-no-files-found: ignore
