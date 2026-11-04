@@ -38,7 +38,15 @@ recommended resolution grounded in network-rule summaries and the merchant's own
 |---|---|---|---|
 | POST | `/v2/disputes/{id}/resolutions` | analyst | 201 terminal outcome, 202 awaiting approval, 409 in progress / not resolvable |
 | GET | `/v2/disputes/{id}/resolutions/{thread_id}` | analyst | status, outcome, draft, approval, execution, next nodes |
+| GET | `/v2/disputes/{id}/resolutions/{thread_id}/stream` | analyst | SSE state events |
+| GET | `/v2/approvals` · `/v2/approvals/{id}` | analyst+ | queue filtered by role, excluding own requests |
+| POST | `/v2/approvals/{id}/decision` | required role, not the requester | approve/reject with `summary_hash`; resumes the thread |
 | GET | `/admin/threads/{thread_id}/history` | admin | checkpoint trail without values; audited |
+| POST | `/admin/threads/{thread_id}/recover` · `/cancel` | admin | finish/replay or stop a stuck thread |
+| GET | `/metrics` | — | Prometheus |
+
+MCP servers (separate processes): `mcp_servers.payments` (`issue_refund`, `get_refund`, `get_transaction`) and
+`mcp_servers.network_gateway` (`submit_representment`, `get_submission`), reached only through the tool gateway.
 
 `/v1/disputes/{id}/assist` keeps its contract and now returns `Deprecation`, `Sunset` and a successor `Link`.
 
@@ -85,6 +93,8 @@ Layer rules (`[tool.importlinter]` in `pyproject.toml`): api → bootstrap → (
 application → domain. Graph code never imports drivers, vendors or the container; the API never names an adapter.
 
 Ops scripts: `scripts/checkpoint_setup.py` (deploy), `scripts/prune_checkpoints.py` (daily retention),
+`scripts/sweep.py` (expiry + reconciliation, if not run in-process), `scripts/pin_tool_schemas.py` (tool contracts),
+`scripts/smoke_tools.py` (MCP over HTTP),
 `scripts/export_checkpoint.py` (release fixtures), `scripts/draw_graphs.py` (compiled-graph diagrams).
 
 ## Design docs (resolution workflow v2)
@@ -93,4 +103,4 @@ Ops scripts: `scripts/checkpoint_setup.py` (deploy), `scripts/prune_checkpoints.
 discovery (`docs/orientation.md`, `docs/state_inventory.md`, `docs/coupling.md`, `docs/impact.md`) ·
 design (`docs/allocation.md`, `docs/c4/`, `docs/adr/`, `docs/graph_design.md`, `docs/graph_target.mmd`,
 `docs/runtime.md`, `docs/state_changelog.md`) · build (`docs/errors.md`, `docs/recovery.md`,
-`docs/graph_after_*.mmd`).
+`docs/graph_after_*.mmd`) · `docs/approvals.md`, `docs/tools.md`, `docs/observability.md`, `ops/`.

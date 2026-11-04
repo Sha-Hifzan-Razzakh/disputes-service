@@ -15,10 +15,27 @@ services:
       APP_DATABASE_URL: postgresql+psycopg://postgres:dev@db:5432/disputes
     depends_on:
       db: {condition: service_healthy}
+  payments:
+    build: .
+    command: ["uvicorn", "mcp_servers.payments:app", "--host", "0.0.0.0", "--port", "8101"]
+    environment:
+      MCP_PAYMENTS_TOKEN: dev-payments-token
+  network-gateway:
+    build: .
+    command: ["uvicorn", "mcp_servers.network_gateway:app", "--host", "0.0.0.0", "--port", "8102"]
+    environment:
+      MCP_NETWORK_TOKEN: dev-network-token
   app:
     build: .
     environment:
       APP_DATABASE_URL: postgresql+psycopg://postgres:dev@db:5432/disputes
+      APP_TOOLS_ENABLED: "true"
+      APP_MCP_PAYMENTS_URL: http://payments:8101/mcp
+      APP_MCP_NETWORK_URL: http://network-gateway:8102/mcp
+      APP_MCP_PAYMENTS_TOKEN: dev-payments-token
+      APP_MCP_NETWORK_TOKEN: dev-network-token
     ports: ["8000:8000"]
     depends_on:
       migrate: {condition: service_completed_successfully}
+      payments: {condition: service_started}
+      network-gateway: {condition: service_started}

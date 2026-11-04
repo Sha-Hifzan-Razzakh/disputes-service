@@ -20,10 +20,12 @@
 | Situation | Signal | Action |
 |---|---|---|
 | Node raised `TransientError` | retried 3× automatically | nothing, unless all attempts fail → thread `failed` |
-| Run failed mid-way (bug, crash) | thread `failed`; error log | fix → `ResolutionRunner.recover(thread_id)` (admin endpoint in M3). Completed steps are not re-run; the failed step re-runs idempotently. Proven by `test_crash_between_refund_and_dispute_update_recovers_without_repeating_the_refund`. |
+| Run failed mid-way (bug, crash) | thread `failed`; error log | fix → `POST /admin/threads/{id}/recover` (`ResolutionRunner.recover`). Completed steps are not re-run; the failed step re-runs idempotently. Proven by `test_crash_between_refund_and_dispute_update_recovers_without_repeating_the_refund`. |
 | Crash after the tool call, before recording it | side effect `pending` | RetryPolicy / recover re-runs `execute` with the same key; the payments side dedupes → one refund (`test_transient_failure_after_the_tool_call_retries_without_a_second_refund`) |
-| Tool outcome unknown after gateway retries | `side_effects.status = unknown`, outcome EXECUTION_FAILED with the key | reconcile with the payments/network system by idempotency key (sweeper job, M3) |
+| Tool outcome unknown after gateway retries | `side_effects.status = unknown`, outcome EXECUTION_FAILED with the key | the sweeper looks the key up (`payments.get_refund` / `network.get_submission`) after `APP_RECONCILE_AFTER_MINUTES`: found → `succeeded` + outbox `dispute.side_effect_reconciled` for ops; not found → `failed` |
 | Recursion limit | 500 `run_aborted`, `alert=true` log | treat as a bug; inspect history endpoint |
+| Decision stored, resume failed | thread `resume_failed` | `POST /admin/threads/{id}/recover` replays the stored decision |
+| Thread stuck and not worth finishing | thread `failed`/`resume_failed` | `POST /admin/threads/{id}/cancel` frees the dispute for a new run |
 
 ## Compatibility evidence (live v1.4.0 thread)
 

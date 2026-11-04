@@ -25,8 +25,8 @@ Initial: `dispute_id, requested_by, instructions, schema_version, case, reason_f
 retrieval_attempts, evidence, evidence_grade, draft, verification, refine_attempts, action, approval, execution,
 outcome, outcome_reason`. Reducers: `outcome`, `outcome_reason` → `write_once`; `evidence` replaces (single
 writer `gather_evidence`). Shapes: `EvidenceGrade.can_retry`, `Verification.can_refine` and `Action.auto` let the
-routers stay pure functions of state. A resolution checkpoint fixture is exported with the first release that
-ships the approvals endpoints (M3), when a paused thread can be resumed through the public contract.
+routers stay pure functions of state. Fixture: `tests/fixtures/checkpoints/v1_resolution_awaiting.json` — a thread paused at `approve`, exported from
+a live run; every later release must still declare its keys (`test_paused_resolution_fixture_keys_are_still_understood`).
 
 ## evidence (subgraph, checkpointed under the parent task)
 
