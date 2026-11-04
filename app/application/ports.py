@@ -203,10 +203,16 @@ class ThreadRegistry(Protocol):
         ...
 
     async def get(self, tenant_id: str, thread_id: str) -> ThreadRecord: ...
-    async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None: ...
+    async def set_status(
+        self, thread_id: str, status: str, *, outcome: str | None = None, only_from: tuple[str, ...] | None = None
+    ) -> bool:
+        """Set the status (only when the current one is in `only_from`, if given). True if a row changed."""
+        ...
+
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
-    def exclusive(self, thread_id: str) -> AbstractAsyncContextManager[None]:
-        """Hold the thread for one invocation across all replicas; raises ThreadBusy if someone else holds it."""
+    def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AbstractAsyncContextManager[None]:
+        """Hold the thread for one invocation across all replicas, waiting up to `wait_s` for another holder;
+        raises ThreadBusy after that."""
         ...
 
 

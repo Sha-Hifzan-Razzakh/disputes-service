@@ -14,7 +14,7 @@
 | Retention (T10.11) | `scripts/prune_checkpoints.py` deletes checkpoints of `done/failed/cancelled` threads older than `APP_CHECKPOINT_RETENTION_DAYS` (90). The business record (threads row, approvals, side effects, audit, dispute timeline) is kept. Run daily. | script + test |
 | Encryption (T10.12) | In transit: settings refuse a staging/prod `APP_DATABASE_URL` without `sslmode=require`/`verify-full`. At rest: managed Postgres storage encryption; checkpoint payloads hold no card numbers or secrets (SR6). App-level `EncryptedSerializer` (LANGGRAPH_AES_KEY) is deferred until state must hold regulated data. | settings validator |
 | Admin inspection (T10.13) | `GET /admin/threads/{id}/history` (admin, tenant-scoped, ≤ 50): step, nodes run and keys written, next, outcome — no values. Audited. | `api/routers/admin.py` |
-| One writer per thread (M4) | Every invoke/resume/recover holds `pg_try_advisory_lock(hashtextextended(thread_id))` for the whole run; a second caller gets 409 `thread_busy` instead of racing the checkpoint. A busy resume does not mark the decision `resume_failed`. | `SqlThreadRegistry.exclusive`, `runners._invoke` |
+| One writer per thread (M4, review R5/R16) | Every invoke/resume/recover holds `pg_try_advisory_lock(hashtextextended(thread_id))` on a dedicated AUTOCOMMIT connection for the whole run. A start/recover that finds it held gets 409 `thread_busy`; a resume waits up to `RunLimits.resume_lock_wait_s` (5 s) first, because a decision can arrive while the start run is still writing its interrupt. A decision whose resume could not run (busy, 429) marks a thread still `awaiting_approval` as `resume_failed`. | `SqlThreadRegistry.exclusive`, `runners._invoke` |
 | Start audit inside the graph (M4) | `resolution.started` is written by `load_case` (retried, deduped) instead of the runner, so a failed audit write cannot orphan a registered thread. | `orchestration/resolution.py` |
 
 ## Recovery procedure
@@ -29,7 +29,8 @@
 | Tool outcome unknown after gateway retries | `side_effects.status = unknown`, outcome EXECUTION_FAILED with the key | the sweeper looks the key up (`payments.get_refund` / `network.get_submission`) after `APP_RECONCILE_AFTER_MINUTES`: found → `succeeded` + outbox `dispute.side_effect_reconciled` for ops; not found → `failed` |
 | Recursion limit | 500 `run_aborted`, `alert=true` log | treat as a bug; inspect history endpoint |
 | Decision stored, resume failed | thread `resume_failed` | `POST /admin/threads/{id}/recover` replays the stored decision |
-| `409 thread_busy` on recover/resume | another run of the thread holds the lock | wait for it; the lock is released when its session ends, including on crash |
+| `409 thread_busy` / `429` on a decision | the decision is stored; thread `resume_failed` | `POST /admin/threads/{id}/recover` replays it. A thread left `awaiting_approval` with a decided approval is recoverable the same way |
+| `409 thread_busy` on recover | another run of the thread holds the lock | wait for it; the lock is released when its connection ends, including on crash |
 | Thread stuck and not worth finishing | thread `failed`/`resume_failed` | `POST /admin/threads/{id}/cancel` frees the dispute for a new run |
 
 ## Compatibility evidence (live v1.4.0 thread)

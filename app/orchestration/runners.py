@@ -26,6 +26,7 @@ from app.orchestration.context import Ctx
 class RunLimits:
     recursion_limit: int = 40
     max_concurrency: int = 4
+    resume_lock_wait_s: float = 5.0  # a decision can arrive while the start run is still writing its interrupt
 
 
 def run_config(thread_id: str, limits: RunLimits, *, ctx: Ctx) -> RunnableConfig:
@@ -107,7 +108,7 @@ class ResolutionRunner:
     async def resume(self, thread_id: str, value: dict[str, Any], ctx: Ctx) -> dict[str, Any]:
         """Continue a paused thread with a server-built resume value (approvals endpoint / sweeper, M3)."""
         await ctx.services.threads.get(ctx.tenant_id, thread_id)
-        await self._invoke(Command(resume=value), thread_id, ctx)
+        await self._invoke(Command(resume=value), thread_id, ctx, lock_wait_s=self.limits.resume_lock_wait_s)
         return await self.view(thread_id, ctx)
 
     async def recover(self, thread_id: str, ctx: Ctx) -> dict[str, Any]:
@@ -118,10 +119,10 @@ class ResolutionRunner:
         await self._invoke(None, thread_id, ctx)
         return await self.view(thread_id, ctx)
 
-    async def _invoke(self, inp: Any, thread_id: str, ctx: Ctx) -> None:
+    async def _invoke(self, inp: Any, thread_id: str, ctx: Ctx, *, lock_wait_s: float = 0.0) -> None:
         structlog.contextvars.bind_contextvars(thread_id=thread_id, tenant_id=ctx.tenant_id)
         try:
-            async with ctx.services.threads.exclusive(thread_id):  # one runner per thread, across replicas
+            async with ctx.services.threads.exclusive(thread_id, wait_s=lock_wait_s):  # one runner per thread
                 await self.graph.ainvoke(
                     inp, run_config(thread_id, self.limits, ctx=ctx), context=ctx, durability="sync"
                 )

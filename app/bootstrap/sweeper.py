@@ -1,8 +1,9 @@
 """Background job (T11.8 + reconciliation): expire approvals past their TTL and resume their threads with the
 stored decision; settle side effects left `unknown`/`pending` by looking them up by idempotency key.
 
-Runs in-process every APP_SWEEPER_INTERVAL_S (one replica holds the work at a time through the approvals CAS and
-SKIP LOCKED), or once from `scripts/sweep.py` under an external scheduler."""
+Runs in-process every APP_SWEEPER_INTERVAL_S, or once from `scripts/sweep.py` under an external scheduler. Several
+replicas may sweep at once: the approvals CAS lets exactly one of them expire each approval, the thread lock lets one
+resume it, and reconciliation is a read plus an idempotent update."""
 
 from __future__ import annotations
 
@@ -43,7 +44,10 @@ class Sweeper:
                 resumed += 1
             except Exception:
                 log.exception("sweeper.resume_failed", thread_id=rec.thread_id)
-                await gs.threads.set_status(rec.thread_id, "resume_failed")
+                # only a thread still waiting for this decision is marked; a run in progress keeps its status
+                await gs.threads.set_status(
+                    rec.thread_id, "resume_failed", only_from=("awaiting_approval", "running", "failed")
+                )
         reconciled = await self.reconcile()
         return {"expired": len(expired), "resumed": resumed, "reconciled": reconciled}
 

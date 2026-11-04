@@ -50,9 +50,11 @@ async def recover(
     """Finish a thread that failed mid-run, or replay a stored approval decision whose resume failed. Completed
     steps never re-run; side-effecting steps are idempotent."""
     rec = await ctx.services.threads.get(p.tenant_id, thread_id)
-    if rec.status not in RECOVERABLE:
-        raise HTTPException(409, f"thread is {rec.status}; only {sorted(RECOVERABLE)} can be recovered")
     view = await runner.view(thread_id, ctx)
+    # a thread still "awaiting_approval" whose approval was already decided lost its resume: recover it too (R5)
+    stranded = rec.status == "awaiting_approval" and view["next"] == ["approve"]
+    if rec.status not in RECOVERABLE and not stranded:
+        raise HTTPException(409, f"thread is {rec.status}; only {sorted(RECOVERABLE)} can be recovered")
     approval = view.get("approval") or {}
     await ctx.services.audit.record(
         tenant_id=p.tenant_id,

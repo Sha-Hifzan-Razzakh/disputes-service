@@ -3,6 +3,7 @@ graph nodes never hold a DB session across a super-step. Connection-level failur
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -118,12 +119,18 @@ class SqlThreadRegistry:
             raise NotFound("thread", thread_id)
         return _thread(row)
 
-    async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None:
+    async def set_status(
+        self, thread_id: str, status: str, *, outcome: str | None = None, only_from: tuple[str, ...] | None = None
+    ) -> bool:
         values: dict[str, Any] = {"status": status}
         if outcome is not None:
             values["outcome"] = outcome
+        stmt = update(ThreadRow).where(ThreadRow.thread_id == thread_id)
+        if only_from is not None:
+            stmt = stmt.where(ThreadRow.status.in_(only_from))
         async with transaction(self.sessions) as s:
-            await s.execute(update(ThreadRow).where(ThreadRow.thread_id == thread_id).values(**values))
+            res = await s.execute(stmt.values(**values))
+        return bool(res.rowcount)  # type: ignore[attr-defined]
 
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None:
         async with transaction(self.sessions) as s:
@@ -136,19 +143,23 @@ class SqlThreadRegistry:
             )
 
     @asynccontextmanager
-    async def exclusive(self, thread_id: str) -> AsyncIterator[None]:
-        """Session-level Postgres advisory lock on a dedicated connection: released on exit, or by Postgres if the
-        process dies, so a crashed worker never leaves a thread locked."""
+    async def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AsyncIterator[None]:
+        """Session-level Postgres advisory lock on a dedicated AUTOCOMMIT connection (never idle in a transaction,
+        so `idle_in_transaction_session_timeout` cannot drop it mid-run; review R16). Released on exit, or by
+        Postgres if the process dies, so a crashed worker never leaves a thread locked. Polls up to `wait_s`."""
         key = {"k": thread_id}
-        async with self.sessions() as s:
-            got = await s.scalar(text("SELECT pg_try_advisory_lock(hashtextextended(:k, 0))"), key)
-            if not got:
-                raise ThreadBusy(thread_id)
+        engine = self.sessions.kw["bind"]
+        async with engine.connect() as raw:
+            conn = await raw.execution_options(isolation_level="AUTOCOMMIT")
+            deadline = asyncio.get_running_loop().time() + wait_s
+            while not await conn.scalar(text("SELECT pg_try_advisory_lock(hashtextextended(:k, 0))"), key):
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise ThreadBusy(thread_id)
+                await asyncio.sleep(0.05)
             try:
                 yield
             finally:
-                await s.execute(text("SELECT pg_advisory_unlock(hashtextextended(:k, 0))"), key)
-                await s.commit()
+                await conn.execute(text("SELECT pg_advisory_unlock(hashtextextended(:k, 0))"), key)
 
 
 class SqlDisputeCommands:
@@ -287,7 +298,6 @@ class SqlApprovalRepository:
                     .where(ApprovalRow.status == "pending", ApprovalRow.expires_at <= now)
                     .order_by(ApprovalRow.expires_at)
                     .limit(limit)
-                    .with_for_update(skip_locked=True)
                 )
             ).all()
         return [_approval(r) for r in rows]

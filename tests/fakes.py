@@ -177,9 +177,14 @@ class MemThreads:
             raise NotFound("thread", thread_id)
         return r
 
-    async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None:
+    async def set_status(
+        self, thread_id: str, status: str, *, outcome: str | None = None, only_from: tuple[str, ...] | None = None
+    ) -> bool:
         r = self.rows[thread_id]
+        if only_from is not None and r.status not in only_from:
+            return False
         self.rows[thread_id] = dataclasses.replace(r, status=status, outcome=outcome or r.outcome)
+        return True
 
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None:
         return next(
@@ -192,12 +197,16 @@ class MemThreads:
         )
 
     @asynccontextmanager
-    async def exclusive(self, thread_id: str) -> AsyncIterator[None]:
+    async def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AsyncIterator[None]:
         lock = self.locks.setdefault(thread_id, asyncio.Lock())
-        if lock.locked():
-            raise ThreadBusy(thread_id)
-        async with lock:
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=wait_s or 0.001)
+        except TimeoutError:
+            raise ThreadBusy(thread_id) from None
+        try:
             yield
+        finally:
+            lock.release()
 
 
 @dataclass
