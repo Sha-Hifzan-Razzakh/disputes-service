@@ -46,5 +46,9 @@ class ThreadBusy(Exception):
     """Another worker is running this thread right now (advisory lock held)."""
 
 
+class FeatureDisabled(Exception):
+    """The rollout flag does not cover this tenant (APP_RESOLUTION_TENANTS)."""
+
+
 class TooManyRuns(Exception):
     """Admission control: the process is at its concurrent-run limit."""

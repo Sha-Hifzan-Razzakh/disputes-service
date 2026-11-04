@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     max_concurrent_runs: int = Field(8, ge=1, le=256)  # admission control per process (T16.13)
     admission_wait_s: float = Field(2.0, ge=0)
 
+    # --- rollout: which tenants may START a resolution (resume, approvals, admin and the sweeper always work, so
+    # turning this off never strands a pending approval). Comma-separated tenant ids, "*" = all, "" = none.
+    # Unset: all tenants in dev/test, none in staging/prod.
+    resolution_tenants: str | None = None
+
     # --- approvals
     approval_ttl_hours: int = Field(72, ge=1)
     urgent_window_hours: int = Field(48, ge=1)
@@ -102,6 +107,13 @@ class Settings(BaseSettings):
         if self.model_provider == "anthropic" and self.anthropic_api_key is None:
             raise ValueError("APP_ANTHROPIC_API_KEY is required when APP_MODEL_PROVIDER=anthropic")
         return self
+
+    def resolution_enabled_for(self, tenant_id: str) -> bool:
+        raw = self.resolution_tenants
+        if raw is None:
+            return self.env in {"dev", "test"}
+        allowed = {t.strip() for t in raw.split(",") if t.strip()}
+        return "*" in allowed or tenant_id in allowed
 
     @property
     def checkpoint_dsn(self) -> str:

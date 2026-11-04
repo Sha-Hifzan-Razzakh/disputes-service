@@ -127,3 +127,25 @@ async def test_admission_control_refuses_with_429_when_full(client, auth, app, t
     assert sql("SELECT count(*) FROM threads WHERE dispute_id = %s", did) == [(0,)]
     slots.release()
     assert (await start(client, auth, did)).status_code == 202
+
+
+async def test_rollout_flag_gates_new_starts_only(client, auth, app, tools, monkeypatch) -> None:
+    """T19.8/T23.6: a tenant outside APP_RESOLUTION_TENANTS cannot start a resolution, but an approval already
+    pending when the flag is turned off still completes (no stranded work)."""
+    settings = app.state.container.settings
+    did = await dispute(client, auth, "NW-1001", "10.4", "189.00")
+    pending = (await start(client, auth, did)).json()
+    monkeypatch.setattr(settings, "resolution_tenants", "aurora")
+    other = await dispute(client, auth, "NW-1003", "13.1", "89.50")
+    r = await start(client, auth, other)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "resolution_not_enabled"
+    assert sql("SELECT count(*) FROM threads WHERE dispute_id = %s", other) == [(0,)]
+    ap = (await client.get(f"/v2/approvals/{pending['approval']['approval_id']}", headers=auth(user="ben"))).json()
+    r = await client.post(
+        f"/v2/approvals/{ap['id']}/decision",
+        headers=auth(user="ben"),
+        json={"decision": "reject", "summary_hash": ap["summary_hash"], "reason": "rolled back"},
+    )
+    assert r.status_code == 200 and r.json()["resolution"]["outcome"] == "REJECTED"
+    monkeypatch.setattr(settings, "resolution_tenants", "*")
+    assert (await start(client, auth, other)).status_code in (201, 202)

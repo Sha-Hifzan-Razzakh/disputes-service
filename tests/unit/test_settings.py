@@ -31,3 +31,29 @@ def test_dev_defaults_are_valid() -> None:
 def test_invalid_combinations_fail_fast(overrides: dict, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("env", "raw", "tenant", "enabled"),
+    [
+        ("dev", None, "northwind", True),
+        ("test", None, "northwind", True),
+        ("prod", None, "northwind", False),
+        ("prod", "*", "northwind", True),
+        ("prod", "aurora, northwind", "northwind", True),
+        ("prod", "aurora", "northwind", False),
+        ("dev", "", "northwind", False),
+    ],
+)
+def test_resolution_rollout_flag(env: str, raw: str | None, tenant: str, enabled: bool) -> None:
+    extra = (
+        {
+            "jwt_secret": "x" * 40,
+            "checkpoint_auto_setup": False,
+            "database_url": "postgresql+psycopg://u@h/db?sslmode=require",
+        }
+        if env == "prod"
+        else {}
+    )
+    s = Settings(env=env, resolution_tenants=raw, **extra)
+    assert s.resolution_enabled_for(tenant) is enabled

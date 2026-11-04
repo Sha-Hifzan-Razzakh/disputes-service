@@ -33,6 +33,7 @@ and the request-id middleware; runners pass it as `context=` and put tenant, use
 | Branch concurrency | `APP_MAX_CONCURRENCY` | 4 | same |
 | Tool call timeout / attempts | `APP_TOOL_TIMEOUT_S`, `APP_TOOL_MAX_ATTEMPTS` | 4 s / 3 | `McpToolGateway` |
 | Tool rate limit | `APP_TOOL_RATE_PER_S`, `APP_TOOL_BURST` | 5/s, burst 10 per tenant per tool | `TokenBucket` |
+| Rollout flag | `APP_RESOLUTION_TENANTS` | unset: all tenants in dev/test, none in staging/prod | `POST /v2/…/resolutions` → 403 `resolution_not_enabled`; nothing else is gated |
 | Tools kill switch | `APP_TOOLS_ENABLED` | false | `build_tool_gateway` → `DisabledToolGateway` |
 | Checkpoint retention | `APP_CHECKPOINT_RETENTION_DAYS` | 90 | `scripts/prune_checkpoints.py` |
 

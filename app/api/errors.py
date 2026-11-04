@@ -11,6 +11,7 @@ from app.application.errors import (
     ApprovalChanged,
     ApprovalDecided,
     ApprovalExpired,
+    FeatureDisabled,
     Forbidden,
     ResolutionInProgress,
     RunAborted,
@@ -53,6 +54,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Forbidden)
     async def _fb(req: Request, e: Forbidden) -> JSONResponse:
         return _envelope(req, 403, "forbidden", str(e))
+
+    @app.exception_handler(FeatureDisabled)
+    async def _fd(req: Request, e: FeatureDisabled) -> JSONResponse:
+        return _envelope(req, 403, "resolution_not_enabled", str(e))
 
     @app.exception_handler(ApprovalChanged)
     async def _ac(req: Request, e: ApprovalChanged) -> JSONResponse:

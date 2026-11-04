@@ -1,4 +1,4 @@
-"""/v2 resolution workflow: start a resolution and read its state (approvals and streaming arrive in M3)."""
+"""/v2 resolution workflow: start a resolution (behind the APP_RESOLUTION_TENANTS rollout flag), read and stream it."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import AppContainer, Principal, bounded_run, graph_context, require_role, resolution_runner
 from app.api.schemas_v2 import ResolutionOut, StartResolutionIn
+from app.application.errors import FeatureDisabled
 from app.orchestration.context import Ctx
 from app.orchestration.runners import ResolutionRunner
 
@@ -37,6 +38,8 @@ async def start_resolution(
     ctx: Context,
     c: AppContainer,
 ) -> ResolutionOut:
+    if not c.settings.resolution_enabled_for(ctx.tenant_id):
+        raise FeatureDisabled(f"resolutions are not enabled for tenant {ctx.tenant_id} yet")
     view = await bounded_run(runner.start(dispute_id=dispute_id, instructions=body.instructions, ctx=ctx), c)
     if view["status"] == "awaiting_approval":
         response.status_code = status.HTTP_202_ACCEPTED
