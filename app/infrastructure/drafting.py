@@ -1,14 +1,15 @@
 """Recommendation drafters.
 
 RuleBasedDrafter is deterministic and needs no API key (default, used in tests).
-AnthropicDrafter calls Claude through langchain-anthropic when APP_MODEL_PROVIDER=anthropic.
+AnthropicDrafter wraps a chat model (Claude via langchain-anthropic) when APP_MODEL_PROVIDER=anthropic.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr
+from langchain_core.language_models import BaseChatModel
+from pydantic import BaseModel, Field
 
 from app.application.ports import PolicyHit, Recommendation
 
@@ -51,15 +52,10 @@ class _Draft(BaseModel):
 
 
 class AnthropicDrafter:  # pragma: no cover - requires an API key
-    def __init__(self, model: str, api_key: str, timeout_s: float) -> None:
-        from langchain_anthropic import ChatAnthropic
+    """Adapter over a chat model built once in bootstrap (timeout, retries and rate limiter set there)."""
 
-        self.llm = ChatAnthropic(
-            model=model,
-            api_key=SecretStr(api_key),
-            timeout=timeout_s,  # type: ignore[call-arg]
-            max_retries=2,
-        ).with_structured_output(_Draft)
+    def __init__(self, chat_model: BaseChatModel) -> None:
+        self.llm = chat_model.with_structured_output(_Draft)
 
     async def draft(self, *, case: dict[str, Any], question: str, hits: list[PolicyHit]) -> Recommendation:
         ctx = "\n".join(f"[{h.chunk_id}] ({h.document_title}) {h.text}" for h in hits)

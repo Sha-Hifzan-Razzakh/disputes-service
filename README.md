@@ -42,8 +42,8 @@ app/
   application/    use cases (DisputeService, PolicyService, AssistService) and ports
   domain/         Dispute aggregate, reason codes, Money — no I/O
   infrastructure/ SQLAlchemy models and repositories, retrieval, drafters
-  orchestration/  LangGraph dispute assistant (v1)
-  bootstrap/      settings, container, FastAPI lifespan
+  orchestration/  LangGraph graphs, state contracts, reducers, run context (Ctx), runners
+  bootstrap/      settings, container (composition root), FastAPI lifespan
 migrations/       Alembic
 seeds/            demo tenants, ledger, policies, disputes
 tests/            unit, api, graph
@@ -67,5 +67,15 @@ uv run python scripts/mint_token.py --tenant northwind --role analyst   # bearer
 
 ```bash
 uv run pytest            # needs local Postgres; creates and drops database disputes_test
-uv run ruff check . && uv run mypy app
+uv run ruff check . && uv run mypy app && uv run lint-imports
 ```
+
+Layer rules (`[tool.importlinter]` in `pyproject.toml`): api → bootstrap → (orchestration | infrastructure) →
+application → domain. Graph code never imports drivers, vendors or the container; the API never names an adapter.
+
+## Design docs (resolution workflow v2)
+
+`docs/guarantees.md` · `docs/spec.md` · `specs/*.feature` · `evals/golden_v0.jsonl` · `docs/pressure_cards.md` ·
+discovery (`docs/orientation.md`, `docs/state_inventory.md`, `docs/coupling.md`, `docs/impact.md`) ·
+design (`docs/allocation.md`, `docs/c4/`, `docs/adr/`, `docs/graph_design.md`, `docs/graph_target.mmd`,
+`docs/runtime.md`, `docs/state_changelog.md`).

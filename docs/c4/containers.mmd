@@ -1,0 +1,18 @@
+%% C4 level 2 — containers (T04.6)
+flowchart TB
+  user([Analyst / Ops lead]) -->|HTTPS + JWT| api
+  subgraph svc[Disputes Service]
+    api[API process<br/>FastAPI · uvicorn<br/>routers, auth, run timeout, SSE]
+    sweeper[Expiry sweeper<br/>same image, scheduled job]
+  end
+  subgraph mcp[MCP servers]
+    payments[payments<br/>FastMCP · streamable HTTP]
+    netgw[network-gateway<br/>FastMCP · streamable HTTP]
+  end
+  pg[(Postgres 16<br/>disputes, ledger mirror, policies,<br/>threads, approvals, side_effects, tool_calls,<br/>outbox, audit_log, LangGraph checkpoints)]
+  api -->|SQLAlchemy async + psycopg pool| pg
+  sweeper -->|same| pg
+  api -->|ToolGateway → MCP client| payments
+  api -->|ToolGateway → MCP client| netgw
+  api -.->|optional| llm[(Anthropic API)]
+  api -->|/metrics, OTLP| obs[(Prometheus / OTel collector)]

@@ -33,7 +33,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def _http(req: Request, e: HTTPException) -> JSONResponse:
-        codes = {401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict"}
+        codes = {401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict", 504: "run_timeout"}
         return _envelope(req, e.status_code, codes.get(e.status_code, "http_error"), str(e.detail))
 
     @app.exception_handler(RequestValidationError)

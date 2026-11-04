@@ -1,6 +1,8 @@
 """v1 dispute assistant graph: classify → retrieve policy → draft recommendation.
 
 One thread per dispute (thread_id = "assist:<dispute_id>"); each question appends to `history`.
+Nodes reach services and the tenant through `runtime.context` (Ctx); the state shape is unchanged from v1.4.0 so
+existing checkpoints keep loading. `tenant_id` is still accepted as input but no longer read.
 """
 
 from __future__ import annotations
@@ -10,9 +12,11 @@ from dataclasses import asdict
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
 
-from app.bootstrap.container import get_container
+from app.application.ports import PolicyHit
 from app.domain.reason_codes import lookup
+from app.orchestration.context import Ctx
 
 
 class AssistState(TypedDict, total=False):
@@ -34,26 +38,23 @@ async def classify_reason(state: AssistState) -> dict[str, Any]:
     return {"reason_family": lookup(d["network"], d["reason_code"]).family.value}
 
 
-async def retrieve_policy(state: AssistState) -> dict[str, Any]:
-    c = get_container()
+async def retrieve_policy(state: AssistState, runtime: Runtime[Ctx]) -> dict[str, Any]:
+    ctx = runtime.context
     d = state["dispute"]
     query = f"{d['network']} {d['reason_code']} {state['reason_family']} {state['question']}"
-    hits = await c.policy_store.search(tenant_id=state["tenant_id"], query=query, k=c.settings.retrieval_top_k)
+    hits = await ctx.services.policy_store.search(tenant_id=ctx.tenant_id, query=query, k=ctx.services.retrieval_top_k)
     return {"policy_hits": [asdict(h) for h in hits]}
 
 
-async def draft_recommendation(state: AssistState) -> dict[str, Any]:
-    from app.application.ports import PolicyHit
-
-    c = get_container()
+async def draft_recommendation(state: AssistState, runtime: Runtime[Ctx]) -> dict[str, Any]:
     hits = [PolicyHit(**h) for h in state.get("policy_hits", [])]
-    case = {
+    case: dict[str, object] = {
         "dispute": state["dispute"],
         "transaction": state["transaction"],
         "evidence_kinds": state.get("evidence_kinds", []),
         "reason_family": state["reason_family"],
     }
-    rec = await c.drafter.draft(case=case, question=state["question"], hits=hits)
+    rec = await runtime.context.services.drafter.draft(case=case, question=state["question"], hits=hits)
     return {
         "recommendation": rec.text,
         "suggested_resolution": rec.suggested_resolution,
@@ -62,8 +63,8 @@ async def draft_recommendation(state: AssistState) -> dict[str, Any]:
     }
 
 
-def build_assist_graph() -> StateGraph:
-    g = StateGraph(AssistState)
+def build_assist_graph() -> StateGraph[AssistState, Ctx, AssistState, AssistState]:
+    g = StateGraph(AssistState, context_schema=Ctx)
     g.add_node("classify_reason", classify_reason)
     g.add_node("retrieve_policy", retrieve_policy)
     g.add_node("draft_recommendation", draft_recommendation)

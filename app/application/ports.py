@@ -95,3 +95,141 @@ class RecommendationDrafter(Protocol):
 
 class Clock(Protocol):
     def now(self) -> datetime: ...
+
+
+# --- v2 resolution workflow (stage 4, T04.2) -----------------------------------------------------------------
+# Data shapes and ports the resolution graph and its endpoints depend on. Adapters arrive in M2 (persistence)
+# and M3 (approvals, tool gateway, MCP clients); the graph only ever sees these Protocols.
+
+
+@dataclass(frozen=True, slots=True)
+class CaseSnapshot:
+    """Everything a run needs about one dispute, read once at the start of the run (tenant-filtered)."""
+
+    dispute: Dispute
+    transaction: TransactionView
+    evidence: tuple[EvidenceItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TenantDisputePolicy:
+    tenant_id: str
+    currency: str
+    approval_threshold: Money  # refunds at or above need ops_lead
+    auto_approve_below: Money | None = None  # None = auto-approve off (default)
+    partial_pct: int = 50
+
+
+@dataclass(frozen=True, slots=True)
+class DraftResolution:
+    resolution: str  # ACCEPT | PARTIAL | CONTEST | REQUEST_INFO
+    amount: Money | None
+    rationale: str
+    citations: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalRecord:
+    id: uuid.UUID
+    tenant_id: str
+    dispute_id: uuid.UUID
+    thread_id: str
+    requested_by: str
+    required_role: str
+    priority: str  # normal | urgent
+    status: str  # pending | approved | rejected | expired
+    summary: dict[str, object]
+    created_at: datetime
+    expires_at: datetime
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SideEffectRecord:
+    idempotency_key: str
+    tenant_id: str
+    dispute_id: uuid.UUID
+    kind: str  # refund | representment
+    status: str  # pending | succeeded | failed | unknown
+    external_ref: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolResult:
+    ok: bool
+    data: dict[str, object]
+    retryable: bool = False
+    error: str | None = None
+
+
+class CaseReader(Protocol):
+    async def snapshot(self, tenant_id: str, dispute_id: uuid.UUID) -> CaseSnapshot: ...
+
+
+class TenantPolicyRepository(Protocol):
+    async def get(self, tenant_id: str) -> TenantDisputePolicy: ...
+
+
+class ResolutionDrafter(Protocol):
+    async def draft(
+        self, *, case: dict[str, object], evidence: list[dict[str, object]], feedback: list[str], instructions: str
+    ) -> DraftResolution: ...
+
+
+class ThreadRegistry(Protocol):
+    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, thread_id: str, started_by: str) -> None: ...
+    async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None: ...
+    async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
+
+
+class ApprovalRepository(Protocol):
+    async def create(self, record: ApprovalRecord) -> None: ...
+    async def get(self, tenant_id: str, approval_id: uuid.UUID) -> ApprovalRecord: ...
+    async def decide(
+        self, *, tenant_id: str, approval_id: uuid.UUID, status: str, actor: str, note: str | None, now: datetime
+    ) -> ApprovalRecord:
+        """Compare-and-set from pending; raises ApprovalDecided / ApprovalExpired."""
+        ...
+
+    async def pending(
+        self, tenant_id: str, *, roles: Sequence[str], exclude_requester: str, limit: int
+    ) -> list[ApprovalRecord]: ...
+    async def due_for_expiry(self, now: datetime, *, limit: int) -> list[ApprovalRecord]: ...
+
+
+class SideEffectLedger(Protocol):
+    async def reserve(self, record: SideEffectRecord) -> SideEffectRecord:
+        """Insert as pending, or return the existing row for the key (never a second row)."""
+        ...
+
+    async def finish(self, key: str, *, status: str, external_ref: str | None, error: str | None) -> None: ...
+
+
+class AuditLog(Protocol):
+    async def record(
+        self, *, tenant_id: str, actor: str, action: str, subject: str, request_id: str, data: dict[str, object]
+    ) -> None: ...
+
+
+class Outbox(Protocol):
+    async def enqueue(self, *, tenant_id: str, type: str, payload: dict[str, object]) -> None: ...
+
+
+class ToolGateway(Protocol):
+    """Single door to external side-effecting and lookup tools (payments, network gateway).
+
+    Enforces the tool allow-list, tenant match, approval status, idempotency and rate limits before any MCP call.
+    """
+
+    async def call(
+        self,
+        tool: str,
+        args: dict[str, object],
+        *,
+        tenant_id: str,
+        idempotency_key: str | None = None,
+        approval_id: uuid.UUID | None = None,
+    ) -> ToolResult: ...
