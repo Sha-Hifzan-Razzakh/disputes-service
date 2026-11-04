@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -204,6 +205,9 @@ class ThreadRegistry(Protocol):
     async def get(self, tenant_id: str, thread_id: str) -> ThreadRecord: ...
     async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None: ...
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
+    def exclusive(self, thread_id: str) -> AbstractAsyncContextManager[None]:
+        """Hold the thread for one invocation across all replicas; raises ThreadBusy if someone else holds it."""
+        ...
 
 
 class DisputeCommands(Protocol):

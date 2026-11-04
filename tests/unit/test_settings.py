@@ -25,6 +25,7 @@ def test_dev_defaults_are_valid() -> None:
             "sslmode",
         ),
         ({"run_timeout_s": 0}, "greater than 0"),
+        ({"db_pool_size": 1, "db_max_overflow": 5, "max_concurrent_runs": 16}, "APP_MAX_CONCURRENT_RUNS"),
     ],
 )
 def test_invalid_combinations_fail_fast(overrides: dict, message: str) -> None:

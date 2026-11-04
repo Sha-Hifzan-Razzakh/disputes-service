@@ -52,6 +52,7 @@ async def test_failed_run_is_traceable_from_spans_and_logs(client, auth, app, mc
     failed = [s for s in node_spans if s.name == "resolution.apply_resolution"]
     assert failed and not failed[-1].status.is_ok  # error recorded on the span
     assert any(s.name == "tool payments.issue_refund" for s in spans)
+    assert any(s.name == "db.transaction" for s in spans)  # DB work is traced too
     logs = log_lines(capsys)
     errors = [e for e in logs if e.get("event") == "node.error"]
     assert errors and errors[-1]["node"] == "apply_resolution" and errors[-1]["thread_id"] == tid

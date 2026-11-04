@@ -6,9 +6,9 @@ Adapters are never named here: services come from the container's factories (`li
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, HTTPException, Request
@@ -16,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.case import CaseService
+from app.application.errors import TooManyRuns
 from app.application.ports import Ledger
 from app.application.services import DisputeService, PolicyService
 from app.bootstrap.container import Container
@@ -78,7 +79,9 @@ async def db_session(c: AppContainer) -> AsyncIterator[AsyncSession]:
             raise
 
 
-Session = Annotated[AsyncSession, Depends(db_session)]
+# scope="function": commit BEFORE the response is sent. With the default ("request") the commit ran after the response,
+# so a client's next request — on another worker — could read the old version and get a false 409 (load test, M4).
+Session = Annotated[AsyncSession, Depends(db_session, scope="function")]
 
 
 def dispute_service(s: Session, c: AppContainer) -> DisputeService:
@@ -110,10 +113,21 @@ def graph_context(request: Request, c: AppContainer, p: Annotated[Principal, Dep
     return c.graph_context(tenant_id=p.tenant_id, user_id=p.user_id, role=p.role, request_id=request.state.request_id)
 
 
-async def bounded_run[T](run: Awaitable[T], c: Container) -> T:
-    """API-level run timeout (T07.9). The thread keeps its last checkpoint and stays resumable."""
+async def bounded_run[T](run: Coroutine[Any, Any, T], c: Container) -> T:
+    """Admission control (T16.13) then the API-level run timeout (T07.9). A run that cannot get a slot within
+    APP_ADMISSION_WAIT_S is refused with 429 before touching the graph; a timed-out run keeps its checkpoint."""
+    slots = c.run_slots
+    if slots is not None:
+        try:
+            await asyncio.wait_for(slots.acquire(), timeout=c.settings.admission_wait_s)
+        except TimeoutError:
+            run.close()  # never started
+            raise TooManyRuns(f"{c.settings.max_concurrent_runs} runs in progress; retry shortly") from None
     try:
         async with asyncio.timeout(c.settings.run_timeout_s):
             return await run
     except TimeoutError:
         raise HTTPException(504, f"run exceeded {c.settings.run_timeout_s:g}s") from None
+    finally:
+        if slots is not None:
+            slots.release()

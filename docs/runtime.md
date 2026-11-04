@@ -6,7 +6,7 @@ and is closed by the lifespan in reverse order. No node or router creates a clie
 
 | Resource | Created | Limits | Closed | Used by |
 |---|---|---|---|---|
-| SQLAlchemy async engine (psycopg 3) | `build_container` | `APP_DB_POOL_SIZE` (5) + overflow 5, pre-ping | `engine.dispose()` | repositories, policy store |
+| SQLAlchemy async engine (psycopg 3) | `build_container` | `APP_DB_POOL_SIZE` (5) + `APP_DB_MAX_OVERFLOW` (5), pre-ping | `engine.dispose()` | repositories, policy store |
 | Checkpointer pool (`psycopg_pool.AsyncConnectionPool`) | `build_container` | 1–`APP_CHECKPOINT_POOL_MAX` (4), autocommit, `prepare_threshold=0` | `pool.close()` | `AsyncPostgresSaver` |
 | `AsyncPostgresSaver` | lifespan | `setup()` only when `APP_CHECKPOINT_AUTO_SETUP=true` (dev/test; refused in staging/prod) | with pool | compiled graphs |
 | MCP sessions (one per server, own `httpx2` client with that server's bearer token) | `connect_tools` in the lifespan when `APP_TOOLS_ENABLED=true`; lazy reconnect | timeout `APP_TOOL_TIMEOUT_S`, connect ≤ 3 s | `close_container` | `McpToolGateway` |
@@ -28,6 +28,7 @@ and the request-id middleware; runners pass it as `context=` and put tenant, use
 | Limit | Setting | Default | Enforced in |
 |---|---|---|---|
 | API run timeout | `APP_RUN_TIMEOUT_S` | 30 s → 504 `run_timeout` | `api/deps.py::bounded_run` |
+| Concurrent runs per worker | `APP_MAX_CONCURRENT_RUNS`, `APP_ADMISSION_WAIT_S` | 8, wait 2 s → 429 `too_many_runs` | `api/deps.py::bounded_run`; settings refuse more slots than `APP_DB_POOL_SIZE + APP_DB_MAX_OVERFLOW − 2` (see `docs/capacity.md`) |
 | Recursion limit | `APP_RECURSION_LIMIT` | 40 | `orchestration/runners.py::run_config` |
 | Branch concurrency | `APP_MAX_CONCURRENCY` | 4 | same |
 | Tool call timeout / attempts | `APP_TOOL_TIMEOUT_S`, `APP_TOOL_MAX_ATTEMPTS` | 4 s / 3 | `McpToolGateway` |

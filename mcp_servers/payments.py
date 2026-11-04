@@ -105,6 +105,8 @@ def create_server(ledger: PaymentsLedger) -> MCPServer:
                 "dispute_id": dispute_id,
             }
             ledger.refunds[idempotency_key] = {"tenant_id": tenant_id, "result": result}
+            if ledger.faults.take_malformed("issue_refund"):
+                return {"status": "succeeded"}  # money moved, but the answer lacks external_ref
             return {**result, "replayed": False}
 
     @srv.tool(description="Look a refund up by idempotency key (reconciliation).")

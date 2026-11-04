@@ -31,6 +31,8 @@ def route(
     urgent_window: timedelta,
     ttl: timedelta,
     deadline_margin: timedelta,
+    min_decision_window: timedelta = timedelta(hours=1),
+    execution_buffer: timedelta = timedelta(minutes=15),
 ) -> ApprovalRoute:
     if resolution is Resolution.REQUEST_INFO:
         raise ValueError("REQUEST_INFO needs no approval")
@@ -47,6 +49,10 @@ def route(
         and amount.amount < auto_approve_below.amount
     )
     expires_at = min(now + ttl, respond_by - deadline_margin)
+    if expires_at < now + min_decision_window:
+        # Close to the deadline the normal margin would leave no time to decide (found by the evals: with <= 24 h
+        # left the approval was born expired). Give the approver the time that remains, minus an execution buffer.
+        expires_at = respond_by - execution_buffer if respond_by - execution_buffer > now else respond_by
     return ApprovalRoute(role, "urgent" if urgent else "normal", urgent, auto, expires_at)
 
 

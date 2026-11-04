@@ -152,6 +152,11 @@ class TestApprovalRoute:
         assert (r.required_role, r.priority, r.urgent) == ("ops_lead", "urgent", True)
         assert r.expires_at == NOW + timedelta(hours=6)  # respond_by - 24h beats now + 72h
 
+    def test_close_to_the_deadline_the_approver_still_gets_time(self) -> None:
+        assert self.r(Resolution.ACCEPT, "75.00", hours_left=24).expires_at == NOW + timedelta(hours=23, minutes=45)
+        assert self.r(Resolution.ACCEPT, "75.00", hours_left=0.5).expires_at == NOW + timedelta(minutes=15)
+        assert self.r(Resolution.ACCEPT, "75.00", hours_left=0.1).expires_at == NOW + timedelta(minutes=6)
+
     def test_auto_approve_only_below_limit_and_never_urgent_or_contest(self) -> None:
         assert self.r(Resolution.ACCEPT, "20.00", auto="50.00").auto
         assert not self.r(Resolution.ACCEPT, "60.00", auto="50.00").auto

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps import AppContainer, Principal, bounded_run, graph_context, require_role, resolution_runner
 from app.api.schemas_v2 import ApprovalOut, DecisionIn, DecisionOut, ResolutionOut
 from app.application.approvals import resume_value
+from app.application.errors import ThreadBusy
 from app.orchestration.context import Ctx
 from app.orchestration.runners import ResolutionRunner
 
@@ -52,6 +53,8 @@ async def decide(
     )
     try:
         view = await bounded_run(runner.resume(rec.thread_id, resume_value(rec), ctx), c)
+    except ThreadBusy:
+        raise  # another runner is resuming it right now; the stored decision drives that run
     except BaseException:
         await ctx.services.threads.set_status(rec.thread_id, "resume_failed")
         raise

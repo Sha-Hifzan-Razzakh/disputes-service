@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # --- database and checkpointer
     database_url: SecretStr = SecretStr("postgresql+psycopg://postgres@localhost:5432/disputes")
     db_pool_size: int = Field(5, ge=1, le=50)
+    db_max_overflow: int = Field(5, ge=0, le=50)
     checkpoint_pool_max: int = Field(4, ge=1, le=50)
     checkpoint_auto_setup: bool = True  # dev convenience; staging/prod run scripts/checkpoint_setup.py at deploy
     checkpoint_retention_days: int = Field(90, ge=7)  # finished threads older than this are pruned
@@ -67,6 +68,8 @@ class Settings(BaseSettings):
     run_timeout_s: float = Field(30.0, gt=0)
     recursion_limit: int = Field(40, ge=10, le=200)
     max_concurrency: int = Field(4, ge=1, le=32)
+    max_concurrent_runs: int = Field(8, ge=1, le=256)  # admission control per process (T16.13)
+    admission_wait_s: float = Field(2.0, ge=0)
 
     # --- approvals
     approval_ttl_hours: int = Field(72, ge=1)
@@ -87,6 +90,13 @@ class Settings(BaseSettings):
                 self.database_url.get_secret_value()
             ):
                 raise ValueError("APP_DATABASE_URL must use sslmode=require or verify-full outside dev/test")
+        if self.max_concurrent_runs > self.db_pool_size + self.db_max_overflow - 2:
+            # each running thread holds one pooled connection for its advisory lock and needs more for its own
+            # reads/writes: more slots than that starves the pool (measured: every run times out; docs/capacity.md)
+            raise ValueError(
+                f"APP_MAX_CONCURRENT_RUNS={self.max_concurrent_runs} needs a DB pool of at least "
+                f"{self.max_concurrent_runs + 2} (APP_DB_POOL_SIZE + APP_DB_MAX_OVERFLOW)"
+            )
         if self.tools_enabled and (self.mcp_payments_token is None or self.mcp_network_token is None):
             raise ValueError("APP_TOOLS_ENABLED=true needs APP_MCP_PAYMENTS_TOKEN and APP_MCP_NETWORK_TOKEN")
         if self.model_provider == "anthropic" and self.anthropic_api_key is None:

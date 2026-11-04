@@ -105,7 +105,12 @@ def instrument_http(app: Any) -> None:
 
 
 def instrument_db(engine: Any) -> None:
-    """DB spans (T13.4); the engine exists only once the container is built. MCP calls get spans in the gateway."""
+    """DB spans (T13.4). opentelemetry-instrumentation-sqlalchemy does not support SQLAlchemy 2.1 yet (it logs and
+    instruments nothing), so every adapter transaction opens a `db.transaction` span itself
+    (infrastructure/db/session.py). Switch back to the instrumentor once it supports 2.1."""
+    import importlib.metadata
+
     from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
-    SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+    if importlib.metadata.version("sqlalchemy").startswith(("1.", "2.0")):
+        SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)

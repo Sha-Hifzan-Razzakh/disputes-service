@@ -16,7 +16,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from app.application.errors import RunAborted
+from app.application.errors import RunAborted, ThreadBusy
 from app.application.ports import CaseSnapshot
 from app.domain.errors import InvalidTransition, NotFound
 from app.orchestration.context import Ctx
@@ -98,15 +98,6 @@ class ResolutionRunner:
         thread_id = await s.threads.start(
             tenant_id=ctx.tenant_id, dispute_id=dispute_id, graph="resolution", started_by=ctx.user_id
         )
-        await s.audit.record(
-            tenant_id=ctx.tenant_id,
-            actor=ctx.user_id,
-            action="resolution.started",
-            subject=f"thread:{thread_id}",
-            request_id=ctx.request_id,
-            data={},
-            dedupe_key=f"resolution.started:{thread_id}",
-        )
         inp = {"dispute_id": str(dispute_id), "requested_by": ctx.user_id, "instructions": instructions}
         await self._invoke(inp, thread_id, ctx)
         return await self.view(thread_id, ctx, dispute_id=dispute_id)
@@ -128,7 +119,12 @@ class ResolutionRunner:
     async def _invoke(self, inp: Any, thread_id: str, ctx: Ctx) -> None:
         structlog.contextvars.bind_contextvars(thread_id=thread_id, tenant_id=ctx.tenant_id)
         try:
-            await self.graph.ainvoke(inp, run_config(thread_id, self.limits, ctx=ctx), context=ctx, durability="sync")
+            async with ctx.services.threads.exclusive(thread_id):  # one runner per thread, across replicas
+                await self.graph.ainvoke(
+                    inp, run_config(thread_id, self.limits, ctx=ctx), context=ctx, durability="sync"
+                )
+        except ThreadBusy:
+            raise  # the other runner owns the thread; its status stays as it is
         except GraphRecursionError as e:
             await ctx.services.threads.set_status(thread_id, "failed")
             raise RunAborted(thread_id, f"recursion limit {self.limits.recursion_limit} reached") from e

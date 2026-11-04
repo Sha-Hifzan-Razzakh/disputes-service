@@ -64,6 +64,16 @@ async def load_case(
     """D1 needs the clock, so the branch is a Command from the node rather than a router."""
     s, ctx = runtime.context.services, runtime.context
     snap = await s.cases.snapshot(ctx.tenant_id, uuid.UUID(state["dispute_id"]))
+    tid = _thread_id(runtime)
+    await s.audit.record(
+        tenant_id=ctx.tenant_id,
+        actor=state["requested_by"],
+        action="resolution.started",
+        subject=f"thread:{tid}",
+        request_id=ctx.request_id,
+        data={},
+        dedupe_key=f"resolution.started:{tid}",
+    )  # inside a retried node: a DB blip can't orphan it
     expired = s.clock.now() >= snap.dispute.respond_by
     return Command(
         goto="close_expired" if expired else "classify_reason",

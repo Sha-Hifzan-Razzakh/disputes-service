@@ -30,6 +30,17 @@ class FailureInjection:
     """Test/chaos hook: fail the next n calls of a tool with a code (e.g. temporarily_unavailable)."""
 
     pending: dict[str, list[str]] = field(default_factory=dict)
+    malformed: dict[str, int] = field(default_factory=dict)
+
+    def malformed_next(self, tool: str, times: int = 1) -> None:
+        """The next call does its work but answers without the agreed output keys (chaos: T16.5)."""
+        self.malformed[tool] = self.malformed.get(tool, 0) + times
+
+    def take_malformed(self, tool: str) -> bool:
+        if self.malformed.get(tool):
+            self.malformed[tool] -= 1
+            return True
+        return False
 
     def fail_next(self, tool: str, code: str, times: int = 1) -> None:
         self.pending.setdefault(tool, []).extend([code] * times)

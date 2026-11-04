@@ -4,16 +4,17 @@ graph nodes never hold a DB session across a super-step. Connection-level failur
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from app.application.case import CaseService
-from app.application.errors import ApprovalDecided, ApprovalExpired, ResolutionInProgress
+from app.application.errors import ApprovalDecided, ApprovalExpired, ResolutionInProgress, ThreadBusy
 from app.application.ports import (
     ApprovalRecord,
     CaseSnapshot,
@@ -133,6 +134,21 @@ class SqlThreadRegistry:
                     ThreadRow.status.in_(self.ACTIVE),
                 )
             )
+
+    @asynccontextmanager
+    async def exclusive(self, thread_id: str) -> AsyncIterator[None]:
+        """Session-level Postgres advisory lock on a dedicated connection: released on exit, or by Postgres if the
+        process dies, so a crashed worker never leaves a thread locked."""
+        key = {"k": thread_id}
+        async with self.sessions() as s:
+            got = await s.scalar(text("SELECT pg_try_advisory_lock(hashtextextended(:k, 0))"), key)
+            if not got:
+                raise ThreadBusy(thread_id)
+            try:
+                yield
+            finally:
+                await s.execute(text("SELECT pg_advisory_unlock(hashtextextended(:k, 0))"), key)
+                await s.commit()
 
 
 class SqlDisputeCommands:

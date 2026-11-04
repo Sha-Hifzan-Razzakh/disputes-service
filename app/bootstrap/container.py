@@ -5,6 +5,7 @@ Lives on `app.state.container` (no module global). Shutdown closes everything it
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -20,7 +21,12 @@ from app.application.ports import Ledger, RecommendationDrafter, ResolutionDraft
 from app.application.services import DisputeService, PolicyService, SystemClock
 from app.bootstrap.settings import Settings
 from app.infrastructure.db.session import make_engine, make_sessionmaker
-from app.infrastructure.drafting import AnthropicDrafter, RuleBasedDrafter, RuleBasedResolutionDrafter
+from app.infrastructure.drafting import (
+    AnthropicDrafter,
+    LlmResolutionDrafter,
+    RuleBasedDrafter,
+    RuleBasedResolutionDrafter,
+)
 from app.infrastructure.repositories import SqlDisputeRepository, SqlEvidenceRepository, SqlLedger
 from app.infrastructure.retrieval import HashingEmbedder, SqlPolicyStore
 from app.infrastructure.tools.disabled import DisabledToolGateway
@@ -54,6 +60,7 @@ class Container:
     resolution_graph: Any = None
     mcp: dict[str, Any] = field(default_factory=dict)  # server name -> McpConnection (closed on shutdown)
     telemetry: dict[str, Any] = field(default_factory=dict)
+    run_slots: asyncio.Semaphore | None = None  # admission control: concurrent graph runs in this process
     _closers: list[Any] = field(default_factory=list, repr=False)
 
     # --- request-scoped factories (one DB session per request; the API never names an adapter)
@@ -107,8 +114,28 @@ def build_drafter(s: Settings) -> RecommendationDrafter:
 
 
 def build_resolution_drafter(s: Settings) -> ResolutionDrafter:
-    # The LLM resolution drafter arrives with the eval baseline (M4); until then drafts are rule-based in every env.
-    return RuleBasedResolutionDrafter()
+    """Rules by default; the LLM drafter when APP_MODEL_PROVIDER=anthropic (same client settings as T07.5)."""
+    if s.model_provider != "anthropic" or s.anthropic_api_key is None:
+        return RuleBasedResolutionDrafter()
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.rate_limiters import InMemoryRateLimiter
+
+    llm = ChatAnthropic(
+        model=s.model_name,  # type: ignore[call-arg]
+        api_key=s.anthropic_api_key,
+        timeout=s.model_timeout_s,
+        max_retries=s.model_max_retries,
+        rate_limiter=InMemoryRateLimiter(
+            requests_per_second=s.model_requests_per_second, max_bucket_size=s.model_max_burst
+        ),
+        temperature=0,
+    )
+
+    async def complete(prompt: str) -> str:
+        msg = await llm.ainvoke(prompt)
+        return msg.content if isinstance(msg.content, str) else "".join(str(p) for p in msg.content)
+
+    return LlmResolutionDrafter(complete)
 
 
 def build_tool_gateway(s: Settings) -> ToolGateway:
@@ -147,7 +174,7 @@ async def connect_tools(c: Container, factories: dict[str, Any] | None = None) -
 
 
 async def build_container(s: Settings) -> Container:
-    engine = make_engine(s.database_url.get_secret_value(), pool_size=s.db_pool_size)
+    engine = make_engine(s.database_url.get_secret_value(), pool_size=s.db_pool_size, max_overflow=s.db_max_overflow)
     sessions = make_sessionmaker(engine)
     pool: AsyncConnectionPool[Any] = AsyncConnectionPool(
         conninfo=s.checkpoint_dsn,
@@ -194,6 +221,7 @@ async def build_container(s: Settings) -> Container:
         graph_services=services,
         limits=RunLimits(recursion_limit=s.recursion_limit, max_concurrency=s.max_concurrency),
     )
+    c.run_slots = asyncio.Semaphore(s.max_concurrent_runs)
     c._closers = [engine.dispose, pool.close]
     return c
 

@@ -53,7 +53,7 @@ under the parent thread's namespace. Approval and execution stay in the parent: 
 |---|---|---|---|---|
 | `grade_evidence → plan_queries` | `retrieval_attempts` | 2 rounds (`APP_MAX_RETRIEVAL_ATTEMPTS`) | subgraph END with `sufficient=false` → `escalate_insufficient` | `plan_queries` |
 | `verify → draft_resolution` | `refine_attempts` | 1 refine (`APP_MAX_REFINE_ATTEMPTS`) | `escalate_unverified` | `verify` |
-| tool retry | inside the ToolGateway with the same idempotency key (not a graph cycle) | 3 (`APP_TOOL_MAX_ATTEMPTS`) | `execution.status = unknown` → `record_failure` | gateway |
+| tool retry | inside the ToolGateway with the same idempotency key (not a graph cycle); a server crash (`Error executing tool …`) is retryable, a malformed reply from a side-effecting tool is `unknown` (the effect may have happened → reconciled by key), from a read-only tool it is a permanent error | 3 (`APP_TOOL_MAX_ATTEMPTS`) | `execution.status = unknown` → `record_failure` | gateway |
 | node retry on `TransientError` | `RetryPolicy` on idempotent nodes (load_case, close_expired, draft_resolution, prepare_action, request_info, request_approval, execute, apply_resolution, notify, retrieve_policy) | 3 | exception → thread `failed` → recover | LangGraph runtime |
 
 No other cycles: `approve` resumes exactly once per interrupt (a second decision is refused by the approvals

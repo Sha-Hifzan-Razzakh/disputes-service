@@ -33,6 +33,7 @@ from app.infrastructure.tools.policy import POLICY, pin_mismatches
 
 RETRYABLE_CODES = {"temporarily_unavailable", "rate_limited"}
 _ERROR_PREFIX = re.compile(r"^Error executing tool \S+: ")
+_CRASH = re.compile(r"^Error executing tool \S+$")
 MAX_STRING = 2000
 
 _tracer = trace.get_tracer("disputes.tools")
@@ -137,13 +138,18 @@ class McpToolGateway:
                 t0 = time.perf_counter()
                 status, data, error = await self._attempt(rule.server, rule.name, payload, rule.output_keys)
                 ms = int((time.perf_counter() - t0) * 1000)
-                await self._log(tool, tenant_id, idempotency_key, approval_id, attempt, status, ms, payload, error)
+                logged = "error" if status == "malformed" else status
+                await self._log(tool, tenant_id, idempotency_key, approval_id, attempt, logged, ms, payload, error)
                 span.set_attribute("tool.attempts", attempt)
                 span.set_attribute("tool.status", status)
                 if status == "ok":
                     return ToolResult(ok=True, data={**data, "attempts": attempt})
                 if status == "error":
                     return ToolResult(ok=False, data={"attempts": attempt}, retryable=False, error=error)
+                if status == "malformed":
+                    # the call reached the provider; for a side effect we cannot tell whether it happened, so the
+                    # caller must treat it as unknown (reconciliation), not as a clean failure. Retrying won't help.
+                    return ToolResult(ok=False, data={"attempts": attempt}, retryable=rule.side_effect, error=error)
                 if attempt < self.max_attempts:
                     await asyncio.sleep(self.backoff_s * 2 ** (attempt - 1))
             return ToolResult(ok=False, data={"attempts": self.max_attempts}, retryable=True, error=error)
@@ -183,11 +189,14 @@ class McpToolGateway:
         except ToolTransportError as e:
             return "retryable_error", {}, str(e)
         if is_error:
+            if _CRASH.match(str(result)):  # server crashed without a business code: outcome unknown → retry same key
+                return "retryable_error", {}, f"server_error: {result}"
             text = _ERROR_PREFIX.sub("", str(result))  # "Error executing tool x: <code>: <message>"
             code = text.split(":", 1)[0].strip()
             return ("retryable_error" if code in RETRYABLE_CODES else "error"), {}, text[:500]
         if not isinstance(result, dict) or not output_keys <= set(result):
-            return "error", {}, f"malformed_output: missing {sorted(output_keys - set(result or {}))}"
+            keys = set(result) if isinstance(result, dict) else set()
+            return "malformed", {}, f"malformed_output: missing {sorted(output_keys - keys)}"
         return "ok", _truncate(result), None
 
     async def _log(

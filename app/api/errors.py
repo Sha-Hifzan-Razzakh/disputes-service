@@ -14,6 +14,8 @@ from app.application.errors import (
     Forbidden,
     ResolutionInProgress,
     RunAborted,
+    ThreadBusy,
+    TooManyRuns,
 )
 from app.domain.errors import DomainError, InvalidTransition, NotFound, VersionConflict
 
@@ -55,6 +57,16 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApprovalChanged)
     async def _ac(req: Request, e: ApprovalChanged) -> JSONResponse:
         return _envelope(req, 409, "approval_changed", str(e))
+
+    @app.exception_handler(ThreadBusy)
+    async def _tb(req: Request, e: ThreadBusy) -> JSONResponse:
+        return _envelope(req, 409, "thread_busy", f"thread {e} is being processed by another request")
+
+    @app.exception_handler(TooManyRuns)
+    async def _tm(req: Request, e: TooManyRuns) -> JSONResponse:
+        resp = _envelope(req, 429, "too_many_runs", str(e))
+        resp.headers["Retry-After"] = "2"
+        return resp
 
     @app.exception_handler(RunAborted)
     async def _ra(req: Request, e: RunAborted) -> JSONResponse:

@@ -80,7 +80,9 @@ D6 **Approval route.** Every ACCEPT / PARTIAL / CONTEST needs one approval.
 - The approver must not be the requester (four-eyes). `admin` satisfies any required role.
 
 D7 **Approval decision.** Approved → execute. Rejected → outcome `REJECTED`, dispute unchanged.
-Not decided before TTL = min(created + 72 h, `respond_by` − 24 h) → outcome `APPROVAL_EXPIRED`.
+Not decided before TTL = min(created + 72 h, `respond_by` − 24 h) → outcome `APPROVAL_EXPIRED`. When that leaves
+less than 1 h to decide (≤ 25 h to the deadline), TTL = `respond_by` − 15 min (time to execute), or `respond_by`
+itself if even that has passed. *Amended in M4: the evals showed approvals created expired near the deadline.*
 
 D8 **Execution.** Call the tool with the idempotency key fixed before the approval. Transient errors (timeout,
 5xx, rate limit) retry up to 3 times with backoff. On success → apply the domain transition

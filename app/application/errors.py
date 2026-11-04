@@ -40,3 +40,11 @@ class Forbidden(Exception):
 
 class ApprovalChanged(Exception):
     """The approver decided on a summary that differs from the stored one (stale screen or tampered payload)."""
+
+
+class ThreadBusy(Exception):
+    """Another worker is running this thread right now (advisory lock held)."""
+
+
+class TooManyRuns(Exception):
+    """Admission control: the process is at its concurrent-run limit."""

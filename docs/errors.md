@@ -17,6 +17,8 @@ callers that broke a rule, systems that failed, and bugs. Only one class is retr
 | Tool permanent failure | tool result | no | `execution.status = failed` → EXECUTION_FAILED | card account closed |
 | `InvalidResume` | `approve` node | no | 500 (a server-built resume value was wrong — bug) | four-eyes violated, malformed value |
 | `RunAborted` | runner (wraps `GraphRecursionError`) | no | 500 `run_aborted`, error log with `alert=true`, thread `failed` | loop bug |
+| `ThreadBusy` | `ThreadRegistry.exclusive` (advisory lock per thread) | no | 409 `thread_busy` | two resumes/recovers of one thread at once |
+| `TooManyRuns` | API `bounded_run` admission (`APP_MAX_CONCURRENT_RUNS`) | client, after `Retry-After` | 429 `too_many_runs` | overload |
 | `TimeoutError` | API `bounded_run` | no | 504 `run_timeout`; thread keeps its last checkpoint | slow model |
 | anything else | — | no | 500, thread `failed`, recoverable with `ResolutionRunner.recover` | bug |
 
