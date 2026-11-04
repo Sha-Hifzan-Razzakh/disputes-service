@@ -90,3 +90,23 @@ async def test_logs_redact_sensitive_fields_and_patterns(client, auth, capsys) -
     entry = next(e for e in log_lines(capsys) if e.get("event") == "probe")
     assert entry["instructions"] == "[REDACTED]" and entry["question"] == "[REDACTED]"
     assert entry["detail"] == {"note": "[REDACTED]", "msg": "pan [PAN] and [EMAIL]"}
+
+
+def test_r15_exception_logs_carry_type_message_and_frames_but_no_locals(capsys) -> None:
+    import json
+
+    import structlog
+
+    from app.bootstrap.observability import configure_logging
+
+    configure_logging()
+    card = "4111 1111 1111 1111"
+    try:
+        secret_local = card  # noqa: F841 - must not appear: frame locals are not rendered
+        raise ValueError(f"refund failed for {card}")
+    except ValueError:
+        structlog.get_logger().exception("boom")
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    exc = line["exception"][0]
+    assert exc["exc_type"] == "ValueError" and exc["frames"] and "[PAN]" in exc["exc_value"]
+    assert card not in json.dumps(line) and "secret_local" not in json.dumps(line)

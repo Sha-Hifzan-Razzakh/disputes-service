@@ -8,7 +8,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import AppContainer, Principal, bounded_run, graph_context, require_role, resolution_runner
@@ -68,8 +68,8 @@ async def stream_resolution(
     _: Annotated[Principal, Depends(require_role("analyst"))],
     runner: Runner,
     ctx: Context,
-    poll_s: float = 0.5,
-    idle_s: float = 60.0,
+    poll_s: Annotated[float, Query(ge=0.2, le=5.0)] = 0.5,  # bounded: a client must not set a tight DB loop (R13)
+    idle_s: Annotated[float, Query(ge=1.0, le=300.0)] = 60.0,
 ) -> StreamingResponse:
     """Server-sent events: one `state` event per change (status, next nodes, outcome), closing when the thread
     reaches a terminal status or nothing changed for `idle_s` (pressure card: LIGHT/Scale)."""

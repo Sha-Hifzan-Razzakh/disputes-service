@@ -6,6 +6,7 @@ AnthropicDrafter wraps a chat model (Claude via langchain-anthropic) when APP_MO
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any, Literal
@@ -225,8 +226,19 @@ def resolution_prompt(
         uploads=", ".join(sorted(e["kind"] for e in case.get("evidence", []))) or "none",
         evidence=ev or "(none)",
         feedback=fb,
-        instructions=(instructions or "(none)")[:1000].replace("</analyst_note>", ""),
+        instructions=_unfenceable((instructions or "(none)")[:1000]),
     )
+
+
+_FENCE = re.compile(r"<\s*/?\s*analyst_note\s*>", re.IGNORECASE)
+
+
+def _unfenceable(note: str) -> str:
+    """Remove every opening/closing analyst_note tag, in any case or spacing, until none is left: a single pass
+    turned `</analyst_</analyst_note>note>` back into a closing tag (review R14)."""
+    while (stripped := _FENCE.sub("", note)) != note:
+        note = stripped
+    return note
 
 
 class LlmResolutionDrafter:

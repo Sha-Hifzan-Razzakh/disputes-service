@@ -21,6 +21,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor, SpanExporter
+from structlog.tracebacks import ExceptionDictTransformer
 
 from app.bootstrap.settings import Settings
 from app.orchestration.state import SENSITIVE
@@ -65,6 +66,9 @@ def configure_logging(level: int = logging.INFO) -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso", key="ts"),
             add_trace_ids,
+            # exception type, message and frames as JSON (review R15); no frame locals, they may hold case data.
+            # Before `redact`, so exception messages are masked like any other string.
+            structlog.processors.ExceptionRenderer(ExceptionDictTransformer(show_locals=False, use_rich=False)),
             redact,
             structlog.processors.JSONRenderer(),
         ],

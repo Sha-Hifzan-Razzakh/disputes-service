@@ -82,3 +82,11 @@ async def test_r16_thread_lock_is_not_held_inside_an_open_transaction(app) -> No
             "WHERE l.locktype = 'advisory' AND l.objid = (hashtextextended('resolution:r16:1', 0) & 4294967295)::oid"
         )
     assert rows == [("idle",)]
+
+
+@pytest.mark.parametrize("query", ["poll_s=0", "poll_s=-1", "idle_s=1000000000", "poll_s=0.01"])
+async def test_r13_stream_polling_is_bounded(client, auth, tools, query: str) -> None:
+    tid, _ = await _pending(client, auth)
+    did = tid.split(":")[1]
+    r = await client.get(f"/v2/disputes/{did}/resolutions/{tid}/stream?{query}", headers=auth())
+    assert r.status_code == 422

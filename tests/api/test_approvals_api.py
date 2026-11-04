@@ -188,7 +188,7 @@ async def test_prompt_injected_instructions_cannot_skip_approval(client, auth, m
 async def test_stream_emits_state_and_closes_at_terminal(client, auth, mcp_tools) -> None:
     did = await dispute(client, auth, "NW-1005", "13.3", "75.00")  # INFO_REQUESTED, terminal at once
     v = (await start(client, auth, did)).json()
-    url = f"/v2/disputes/{did}/resolutions/{v['thread_id']}/stream?poll_s=0.05&idle_s=1"
+    url = f"/v2/disputes/{did}/resolutions/{v['thread_id']}/stream?poll_s=0.2&idle_s=1"
     async with client.stream("GET", url, headers=auth()) as r:
         assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
         body = "".join([chunk async for chunk in r.aiter_text()])
