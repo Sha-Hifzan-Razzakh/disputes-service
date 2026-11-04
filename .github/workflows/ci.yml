@@ -24,6 +24,7 @@ jobs:
       - run: uv run ruff check . && uv run ruff format --check .
       - run: uv run mypy app seeds scripts mcp_servers
       - run: uv run lint-imports
-      - run: uv run pytest -q
+      - run: uv run pytest -q --cov --cov-report=term --cov-report=xml
         env:
           APP_TEST_DSN: postgresql://postgres@localhost:5432
+

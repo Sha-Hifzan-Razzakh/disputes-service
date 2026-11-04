@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run pytest -q -x tests/unit >/tmp/claude-unit.log 2>&1 || { tail -20 /tmp/claude-unit.log >&2; exit 2; }"
+          }
+        ]
+      }
     ]
   }
 }

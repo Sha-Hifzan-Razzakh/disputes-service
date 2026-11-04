@@ -10,6 +10,7 @@ import os
 # Checkpoints must deserialize without importing arbitrary classes (ADR-0002); read at import time by langgraph.
 os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 import httpx
 import jwt
@@ -116,3 +117,18 @@ async def mcp_tools(app: object) -> AsyncIterator[dict[str, object]]:
         c.graph_services = original
         for conn in conns.values():
             await conn.close()
+
+
+@pytest.fixture
+async def tools(app: Any) -> AsyncIterator[Any]:
+    """FakeToolGateway (dedupes on idempotency keys like the MCP servers) swapped into the graph services."""
+    import dataclasses
+
+    from tests.fakes import FakeToolGateway
+
+    c = app.state.container
+    original = c.graph_services
+    fake = FakeToolGateway()
+    c.graph_services = dataclasses.replace(original, tools=fake)
+    yield fake
+    c.graph_services = original
