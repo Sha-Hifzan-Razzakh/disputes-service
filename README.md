@@ -32,6 +32,16 @@ recommended resolution grounded in network-rule summaries and the merchant's own
 | POST | `/v1/policies/documents` | ops_lead (tenant scope), admin (network scope) |
 | GET | `/healthz`, `/readyz` | — |
 
+## API (v2 — resolution workflow)
+
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| POST | `/v2/disputes/{id}/resolutions` | analyst | 201 terminal outcome, 202 awaiting approval, 409 in progress / not resolvable |
+| GET | `/v2/disputes/{id}/resolutions/{thread_id}` | analyst | status, outcome, draft, approval, execution, next nodes |
+| GET | `/admin/threads/{thread_id}/history` | admin | checkpoint trail without values; audited |
+
+`/v1/disputes/{id}/assist` keeps its contract and now returns `Deprecation`, `Sunset` and a successor `Link`.
+
 Errors use one envelope: `{"error": {"code", "message", "request_id"}}`.
 
 ## Layout
@@ -55,6 +65,7 @@ tests/            unit, api, graph
 uv sync
 createdb disputes                      # Postgres 16 on localhost:5432
 uv run alembic upgrade head
+uv run python scripts/checkpoint_setup.py   # deploy step; dev can rely on APP_CHECKPOINT_AUTO_SETUP=true
 uv run python -m seeds.load
 uv run uvicorn app.main:app --reload
 uv run python scripts/mint_token.py --tenant northwind --role analyst   # bearer token for curl
@@ -73,9 +84,13 @@ uv run ruff check . && uv run mypy app && uv run lint-imports
 Layer rules (`[tool.importlinter]` in `pyproject.toml`): api → bootstrap → (orchestration | infrastructure) →
 application → domain. Graph code never imports drivers, vendors or the container; the API never names an adapter.
 
+Ops scripts: `scripts/checkpoint_setup.py` (deploy), `scripts/prune_checkpoints.py` (daily retention),
+`scripts/export_checkpoint.py` (release fixtures), `scripts/draw_graphs.py` (compiled-graph diagrams).
+
 ## Design docs (resolution workflow v2)
 
 `docs/guarantees.md` · `docs/spec.md` · `specs/*.feature` · `evals/golden_v0.jsonl` · `docs/pressure_cards.md` ·
 discovery (`docs/orientation.md`, `docs/state_inventory.md`, `docs/coupling.md`, `docs/impact.md`) ·
 design (`docs/allocation.md`, `docs/c4/`, `docs/adr/`, `docs/graph_design.md`, `docs/graph_target.mmd`,
-`docs/runtime.md`, `docs/state_changelog.md`).
+`docs/runtime.md`, `docs/state_changelog.md`) · build (`docs/errors.md`, `docs/recovery.md`,
+`docs/graph_after_*.mmd`).

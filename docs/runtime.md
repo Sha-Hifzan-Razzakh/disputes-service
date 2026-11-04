@@ -11,7 +11,8 @@ and is closed by the lifespan in reverse order. No node or router creates a clie
 | `AsyncPostgresSaver` | lifespan | `setup()` only when `APP_CHECKPOINT_AUTO_SETUP=true` (dev/test; refused in staging/prod) | with pool | compiled graphs |
 | Shared `httpx.AsyncClient` | `build_container` | timeout `APP_HTTP_TIMEOUT_S` (10 s, connect 3 s), 20 connections | `aclose()` | MCP transport in the tool gateway (M3) |
 | Chat model (only when `APP_MODEL_PROVIDER=anthropic`) | `build_drafter` | timeout 20 s, `max_retries` 2, `InMemoryRateLimiter` 2 rps burst 5 | — (stateless) | `AnthropicDrafter` |
-| Compiled graphs | lifespan, once | — | with container | runners |
+| Compiled graphs | lifespan, once: `evidence` (no checkpointer of its own; runs under the parent task), `assist`, `resolution` | — | with container | runners |
+| Workflow adapters (`SqlCaseReader`, `SqlThreadRegistry`, `SqlDisputeCommands`, `SqlApprovalRepository`, `SqlSideEffectLedger`, `SqlAuditLog`, `SqlOutbox`, `SqlTenantPolicyRepository`) | `build_container` | one short transaction per call; DB connection errors → `TransientError` | — | `GraphServices` |
 | `GraphServices` | `build_container` | — | — | `Ctx.services` |
 
 ## Context on every invoke (T07.8)
@@ -28,6 +29,8 @@ and the request-id middleware; runners pass it as `context=` and put tenant, use
 | Recursion limit | `APP_RECURSION_LIMIT` | 40 | `orchestration/runners.py::run_config` |
 | Branch concurrency | `APP_MAX_CONCURRENCY` | 4 | same |
 | Tool call timeout / attempts | `APP_TOOL_TIMEOUT_S`, `APP_TOOL_MAX_ATTEMPTS` | 4 s / 3 | tool gateway (M3) |
+| Tools kill switch | `APP_TOOLS_ENABLED` | false | `build_tool_gateway` → `DisabledToolGateway` |
+| Checkpoint retention | `APP_CHECKPOINT_RETENTION_DAYS` | 90 | `scripts/prune_checkpoints.py` |
 
 ## Secrets per environment (T07.2)
 

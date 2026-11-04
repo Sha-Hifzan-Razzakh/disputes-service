@@ -3,7 +3,7 @@ Feature: Start a dispute resolution
   or ends with a terminal outcome. Spec: docs/spec.md D1–D6, O4–O6, O9, O11, A1, A2.
 
   Background:
-    Given tenant "northwind" with currency "USD" and approval threshold "250.00"
+    Given tenant "northwind" with currency "USD" and approval threshold "500.00"
     And I am "ana" with role "analyst" in tenant "northwind"
 
   # O11 — strong fraud evidence leads to a contest awaiting approval

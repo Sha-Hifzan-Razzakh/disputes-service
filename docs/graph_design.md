@@ -53,15 +53,23 @@ under the parent thread's namespace. Approval and execution stay in the parent: 
 |---|---|---|---|---|
 | `grade_evidence → plan_queries` | `retrieval_attempts` | 2 rounds (`APP_MAX_RETRIEVAL_ATTEMPTS`) | subgraph END with `sufficient=false` → `escalate_insufficient` | `plan_queries` |
 | `verify → draft_resolution` | `refine_attempts` | 1 refine (`APP_MAX_REFINE_ATTEMPTS`) | `escalate_unverified` | `verify` |
-| tool retry in `execute` | `RetryPolicy` attempts (not a graph cycle) | 3 (`APP_TOOL_MAX_ATTEMPTS`) | `record_failure` | LangGraph runtime |
+| tool retry | inside the ToolGateway with the same idempotency key (not a graph cycle) | 3 (`APP_TOOL_MAX_ATTEMPTS`) | `execution.status = unknown` → `record_failure` | gateway |
+| node retry on `TransientError` | `RetryPolicy` on idempotent nodes (load_case, close_expired, draft_resolution, prepare_action, request_info, request_approval, execute, apply_resolution, notify, retrieve_policy) | 3 | exception → thread `failed` → recover | LangGraph runtime |
 
 No other cycles: `approve` resumes exactly once per interrupt (a second decision is refused by the approvals
 CAS before it can reach the graph).
 
-**Recursion limit.** Worst first invocation: `load_case, classify_reason, gather_evidence, draft_resolution,
-verify, draft_resolution, verify, prepare_action, request_approval, approve` = 10 super-steps; inside the
-subgraph 2 × (`plan_queries`, branches, `grade_evidence`) = 6. Resume: `approve, execute, apply_resolution,
-notify` = 4. `recursion_limit = 40` (`APP_RECURSION_LIMIT`) leaves 4× headroom; a test pins the worst path.
+**Recursion limit.** LangGraph counts the input step, so a path of n node super-steps needs a limit of n + 1.
+Longest single invocation: O6 (`load_case, classify_reason, gather_evidence, draft_resolution, verify,
+draft_resolution, verify, escalate_unverified, notify`) = 9 → needs 10; the approval path with one refine is 10
+→ 11; the evidence subgraph runs ≤ 6 inside its own task. Resume: `approve, execute, apply_resolution, notify` = 4.
+`recursion_limit = 40` (`APP_RECURSION_LIMIT`) leaves ~4× headroom. `test_worst_path_fits_the_recursion_budget`
+pins it (10 passes, 9 aborts); an abort surfaces as 500 `run_aborted`.
+
+**Built vs designed (M2).** `scripts/draw_graphs.py` exports `docs/graph_after_resolution.mmd` and
+`docs/graph_after_assist.mmd` from the compiled graphs; node set, path-map labels and the single `notify` exit
+match `graph_target.mmd`. `tests/graph/test_contracts.py::test_compiled_topology_matches_design` asserts the node
+set and reachability. Nodes read the thread id from `runtime.execution_info` (no `config` parameter).
 
 ## Every outcome walked to a terminal (T06.7)
 

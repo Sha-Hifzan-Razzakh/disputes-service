@@ -73,9 +73,9 @@ service reaches over streamable HTTP; one service replica in dev, ≥ 2 in prod 
 
 | Pressure | Decision | Mechanism | Acceptance |
 |---|---|---|---|
-| Concurrency | HANDLED | [L5] `side_effects.idempotency_key` UNIQUE; key = sha256(tenant, dispute, kind, amount, approval_id) fixed in `prepare_action`; MCP servers dedupe on the same key | Double resume → one `side_effects` row, one ledger refund |
+| Concurrency | HANDLED | [L5] `side_effects.idempotency_key` UNIQUE; key = sha256(tenant, dispute, thread, kind, amount) fixed in `prepare_action` (the approval id does not exist yet at that point; one thread = one action); MCP servers dedupe on the same key | Double resume → one `side_effects` row, one ledger refund |
 | Failure | HANDLED | [L3] record `side_effects` as `pending` before the call, `succeeded/failed/unknown` after; timeout → `unknown` + reconciliation by key (gateway `get_refund(idempotency_key)`) | Crash after call, before apply → resume reads `succeeded` and skips the call |
-| Time | HANDLED | [L4] per-call timeout 4 s; `RetryPolicy(max_attempts=3, backoff)` on transient errors only | Two timeouts then success → 3 attempts, one refund |
+| Time | HANDLED | [L4] per-call timeout 4 s; the gateway retries transient errors 3× with the same key; exhausted → `unknown` + reconciliation; node `RetryPolicy` only for `TransientError` from our own DB | Two timeouts then success → 3 attempts, one refund |
 | Scale | HANDLED | [L4] gateway rate limit per tenant (token bucket 5/s); `max_concurrency=4` per run | Burst of 20 executions → no 429 from MCP server |
 | Trust | HANDLED | [L6] ToolGateway: allow-list per graph node, tenant check on every call, approval id must be `approved` — reason: two MCP servers and shared policy justify a component | Call without approved approval → `PermissionError`, no MCP request |
 | Change | HANDLED | [L4] tool contracts pinned by name + schema hash; gateway refuses unknown schema | MCP server changing `issue_refund` schema → gateway error at startup |

@@ -39,7 +39,7 @@ authorised person to approve it, then executes it exactly once and records the r
 | Identity | JWT (`sub`, `tenant`, `role`) + `X-Request-ID` | Goes to `Ctx`, never to state |
 | Dispute, transaction, merchant evidence | DB (tenant-scoped) | Snapshot taken at `load_case` |
 | Network rules + merchant policies | policy store | Retrieved per run; network docs shared, merchant docs tenant-scoped |
-| Tenant dispute policy | `tenant_dispute_policy` table | Approval threshold, auto-approve limit (off by default) |
+| Tenant dispute policy | `tenant_dispute_policy` table | Approval threshold (seeded from each merchant's policy: northwind 500 USD, aurora 750 EUR; golden tenant `evalco` 250 USD), auto-approve limit (off by default) |
 
 ## 4. Decisions (if / then / else)
 

@@ -1,0 +1,70 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	load_case(load_case)
+	close_expired(close_expired)
+	classify_reason(classify_reason)
+	escalate_insufficient(escalate_insufficient)
+	draft_resolution(draft_resolution)
+	verify(verify)
+	escalate_unverified(escalate_unverified)
+	prepare_action(prepare_action)
+	request_info(request_info)
+	request_approval(request_approval)
+	approve(approve)
+	execute(execute)
+	apply_resolution(apply_resolution)
+	record_rejection(record_rejection)
+	record_expiry(record_expiry)
+	record_failure(record_failure)
+	notify(notify)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> load_case;
+	apply_resolution --> notify;
+	approve -.-> execute;
+	approve -.-> record_expiry;
+	approve -.-> record_rejection;
+	classify_reason --> gather_evidence\3a__start__;
+	close_expired --> notify;
+	draft_resolution --> verify;
+	escalate_insufficient --> notify;
+	escalate_unverified --> notify;
+	execute -. &nbsp;succeeded&nbsp; .-> apply_resolution;
+	execute -. &nbsp;failed&nbsp; .-> record_failure;
+	gather_evidence\3a__end__ -. &nbsp;sufficient&nbsp; .-> draft_resolution;
+	gather_evidence\3a__end__ -. &nbsp;insufficient&nbsp; .-> escalate_insufficient;
+	load_case -.-> classify_reason;
+	load_case -.-> close_expired;
+	prepare_action -. &nbsp;approval&nbsp; .-> request_approval;
+	prepare_action -.-> request_info;
+	record_expiry --> notify;
+	record_failure --> notify;
+	record_rejection --> notify;
+	request_approval --> approve;
+	request_info --> notify;
+	verify -. &nbsp;refine&nbsp; .-> draft_resolution;
+	verify -. &nbsp;failed&nbsp; .-> escalate_unverified;
+	verify -. &nbsp;passed&nbsp; .-> prepare_action;
+	notify --> __end__;
+	subgraph gather_evidence
+	gather_evidence\3a__start__(<p>__start__</p>)
+	gather_evidence\3aplan_queries(plan_queries)
+	gather_evidence\3aretrieve_policy(retrieve_policy)
+	gather_evidence\3agather_txn_evidence(gather_txn_evidence)
+	gather_evidence\3agrade_evidence(grade_evidence)
+	gather_evidence\3a__end__(<p>__end__</p>)
+	gather_evidence\3a__start__ --> gather_evidence\3aplan_queries;
+	gather_evidence\3agather_txn_evidence --> gather_evidence\3agrade_evidence;
+	gather_evidence\3agrade_evidence -. &nbsp;exhausted&nbsp; .-> gather_evidence\3a__end__;
+	gather_evidence\3agrade_evidence -. &nbsp;retry&nbsp; .-> gather_evidence\3aplan_queries;
+	gather_evidence\3aplan_queries -.-> gather_evidence\3agather_txn_evidence;
+	gather_evidence\3aplan_queries -.-> gather_evidence\3aretrieve_policy;
+	gather_evidence\3aretrieve_policy --> gather_evidence\3agrade_evidence;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

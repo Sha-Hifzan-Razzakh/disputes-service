@@ -2,7 +2,7 @@ Feature: Approve or reject a prepared resolution
   Spec: docs/spec.md D6, D7, O7, O8, O11, A3–A5. Guarantee G7.
 
   Background:
-    Given tenant "northwind" with approval threshold "250.00"
+    Given tenant "northwind" with approval threshold "500.00"
     And "ana" is an "analyst", "ben" is an "analyst", "olu" is an "ops_lead" in tenant "northwind"
 
   Scenario: Refund at or above the threshold needs an ops lead
