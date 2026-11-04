@@ -1,0 +1,40 @@
+%% Target topology, reviewed design (T06.8). M2 compares this with draw_mermaid() of the compiled graphs.
+%% Solid = static edge, dashed = conditional edge (label = path-map key), dotted = Command(goto) from a node.
+flowchart TD
+  subgraph RES[resolution graph · thread resolution:dispute_id:n · schema v1]
+    S((START)) --> load_case
+    load_case -. "deadline passed" .-> close_expired
+    load_case -. "open" .-> classify_reason
+    classify_reason --> gather_evidence[[gather_evidence<br/>wrapped evidence subgraph]]
+    gather_evidence -- "sufficient" --> draft_resolution
+    gather_evidence -- "insufficient" --> escalate_insufficient
+    draft_resolution --> verify
+    verify -- "passed" --> prepare_action
+    verify -- "refine (refine_attempts < 1)" --> draft_resolution
+    verify -- "failed" --> escalate_unverified
+    prepare_action -- "request_info" --> request_info
+    prepare_action -- "needs approval / auto" --> request_approval
+    request_approval --> approve{{approve<br/>interrupt}}
+    approve -. "approved / auto" .-> execute
+    approve -. "rejected" .-> record_rejection
+    approve -. "expired" .-> record_expiry
+    execute -- "succeeded" --> apply_resolution
+    execute -- "failed / unknown" --> record_failure
+    close_expired & escalate_insufficient & escalate_unverified & request_info --> notify
+    apply_resolution & record_rejection & record_expiry & record_failure --> notify
+    notify --> E((END))
+  end
+
+  subgraph EV[evidence subgraph · shared by assist and resolution]
+    ES((START)) --> plan_queries
+    plan_queries -. "Send per query" .-> retrieve_policy
+    plan_queries --> gather_txn_evidence
+    retrieve_policy & gather_txn_evidence --> grade_evidence
+    grade_evidence -- "sufficient" --> EE((END))
+    grade_evidence -- "retry (retrieval_attempts < 2)" --> plan_queries
+    grade_evidence -- "exhausted" --> EE
+  end
+
+  subgraph AS[assist graph v2 · thread assist:dispute_id · schema v2]
+    AS0((START)) --> upgrade_state --> a_classify[classify_reason] --> a_evidence[[gather_evidence]] --> draft_recommendation --> AE((END))
+  end
