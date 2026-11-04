@@ -1,14 +1,21 @@
 name: nightly
 # Slow and paid suites, kept out of the PR path:
 #   chaos   - fault injection (model, vector store, DB, tools, checkpointer, crash/resume, fan-out, concurrent resume)
+#   audit   - pip-audit of the locked dependencies (new advisories appear without any code change)
 #   llm-evals - promptfoo prompt + red-team suite, Ragas faithfulness, LangSmith dataset sync; each skips without its key
 on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+  pull_request:
+    types: [labeled]   # add the label `run-llm-evals` (or `run-chaos`) to a PR to run that job on it
+
+permissions:
+  contents: read
 
 jobs:
   chaos:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-chaos'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -28,7 +35,18 @@ jobs:
         env:
           APP_TEST_DSN: postgresql://postgres@localhost:5432
 
+  audit:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: |
+          uv export --frozen --no-dev -q -o requirements.txt
+          uvx pip-audit==2.9.0 -r requirements.txt --disable-pip
+
   llm-evals:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-llm-evals'
     runs-on: ubuntu-latest
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

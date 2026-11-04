@@ -1,0 +1,14 @@
+# gitleaks (CI security job). Default rules plus allowlists for values that are deliberately not secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "dev/test-only values and non-secret hashes"
+paths = [
+  '''^tests/''',                                  # test JWT secret, fake tokens
+  '''^compose\.yaml$''',                          # local dev Postgres password
+  '''^\.env\.example$''',
+  '''^app/infrastructure/tools/policy\.py$''',    # sha256 pins of tool schemas
+  '''^docs/.*\.md$''',                            # example idempotency keys and hashes
+  '''^scripts/load_ramp\.py$''',                  # mints dev JWTs with the dev secret
+]

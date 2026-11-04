@@ -1,0 +1,7 @@
+# Reviewers requested automatically by path (T19.2). Single maintainer today; split as the team grows.
+*                               @Sha-Hifzan-Razzakh
+/app/orchestration/             @Sha-Hifzan-Razzakh
+/app/infrastructure/tools/      @Sha-Hifzan-Razzakh
+/mcp_servers/                   @Sha-Hifzan-Razzakh
+/migrations/                    @Sha-Hifzan-Razzakh
+/evals/                         @Sha-Hifzan-Razzakh
