@@ -1,14 +1,19 @@
-# gitleaks (CI security job). Default rules plus allowlists for values that are deliberately not secret.
+# gitleaks (CI security job). Default rules; the allowlist names each file that deliberately holds a
+# non-secret value (dev/test credentials, schema-hash pins, exported fixtures). Keep it file-by-file.
 [extend]
 useDefault = true
 
 [allowlist]
 description = "dev/test-only values and non-secret hashes"
 paths = [
-  '''^tests/''',                                  # test JWT secret, fake tokens
-  '''^compose\.yaml$''',                          # local dev Postgres password
+  '''^tests/conftest\.py$''',                              # test JWT secret
+  '''^tests/integration/test_api_v2\.py$''',              # MCP bearer token for a local test server
+  '''^tests/fixtures/checkpoints/[^/]+\.json$''',         # exported checkpoints (idempotency keys are hashes)
+  '''^compose\.yaml$''',                                  # local dev Postgres password and MCP tokens
   '''^\.env\.example$''',
-  '''^app/infrastructure/tools/policy\.py$''',    # sha256 pins of tool schemas
-  '''^docs/.*\.md$''',                            # example idempotency keys and hashes
-  '''^scripts/load_ramp\.py$''',                  # mints dev JWTs with the dev secret
+  '''^\.github/workflows/ci\.yml$''',                     # dev MCP tokens for the compose smoke
+  '''^app/bootstrap/settings\.py$''',                     # dev default JWT secret (refused outside dev/test)
+  '''^app/infrastructure/tools/policy\.py$''',            # sha256 pins of tool schemas
+  '''^scripts/(load_ramp|rollback_drill)\.py$''',         # mint dev JWTs with the dev secret
+  '''^docs/[^/]+\.md$''',                                 # example idempotency keys and hashes in prose
 ]

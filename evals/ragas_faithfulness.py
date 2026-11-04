@@ -2,7 +2,7 @@
 
 The rules drafter quotes evidence verbatim, so this only means something with APP_MODEL_PROVIDER=anthropic.
 
-    uv pip install ragas            # not a project dependency: only this script needs it
+    uv pip install ragas==0.2.15    # not a project dependency: only this script needs it
     ANTHROPIC_API_KEY=... uv run python -m evals.ragas_faithfulness [--limit 40] [--min 0.85]
 
 Drafts each promptfoo case with the production LLM drafter, then scores rationale vs. the cited excerpts.

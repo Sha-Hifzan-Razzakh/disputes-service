@@ -6,7 +6,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
-RUN useradd --system --uid 10001 app && chown -R app /app
+RUN useradd --system --uid 10001 app   # owns nothing: code and venv stay read-only for the runtime user
 USER app
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \

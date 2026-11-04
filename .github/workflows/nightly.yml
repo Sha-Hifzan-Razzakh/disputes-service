@@ -66,7 +66,7 @@ jobs:
           source .venv/bin/activate
           PYTHONPATH=. npx -y promptfoo@0.120.0 eval -c evals/promptfoo/promptfooconfig.yaml -o promptfoo.json
       - name: Ragas faithfulness
-        run: uv pip install ragas && uv run python -m evals.ragas_faithfulness
+        run: uv pip install ragas==0.2.15 && uv run python -m evals.ragas_faithfulness   # pinned: this job holds API keys
       - name: LangSmith dataset sync
         run: uv run python -m evals.langsmith_sync
       - uses: actions/upload-artifact@v4
