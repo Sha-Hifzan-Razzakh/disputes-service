@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     tools_enabled: bool = False  # kill switch: false → approved actions end EXECUTION_FAILED without any call
     mcp_payments_url: str = "http://localhost:8101/mcp"
     mcp_network_url: str = "http://localhost:8102/mcp"
+    mcp_payments_token: SecretStr | None = None
+    mcp_network_token: SecretStr | None = None
+    tool_rate_per_s: float = Field(5.0, gt=0)  # per tenant per tool
+    tool_burst: int = Field(10, ge=1)
+
+    # --- background jobs (approval expiry + side-effect reconciliation)
+    sweeper_enabled: bool = True
+    sweeper_interval_s: float = Field(300.0, ge=1)
+    reconcile_after_minutes: int = Field(15, ge=1)
+
+    # --- telemetry
+    otel_exporter: Literal["none", "console", "otlp"] = "none"
+    otel_endpoint: str = "http://localhost:4318"
+    service_name: str = "disputes-service"
 
     # --- retrieval and evidence
     retrieval_top_k: int = Field(5, ge=1, le=20)
@@ -73,6 +87,8 @@ class Settings(BaseSettings):
                 self.database_url.get_secret_value()
             ):
                 raise ValueError("APP_DATABASE_URL must use sslmode=require or verify-full outside dev/test")
+        if self.tools_enabled and (self.mcp_payments_token is None or self.mcp_network_token is None):
+            raise ValueError("APP_TOOLS_ENABLED=true needs APP_MCP_PAYMENTS_TOKEN and APP_MCP_NETWORK_TOKEN")
         if self.model_provider == "anthropic" and self.anthropic_api_key is None:
             raise ValueError("APP_ANTHROPIC_API_KEY is required when APP_MODEL_PROVIDER=anthropic")
         return self

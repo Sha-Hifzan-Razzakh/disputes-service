@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-import httpx
+import structlog
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.application.approvals import ApprovalService
 from app.application.case import CaseService
 from app.application.ports import Ledger, RecommendationDrafter, ResolutionDrafter, ToolGateway
 from app.application.services import DisputeService, PolicyService, SystemClock
@@ -23,6 +24,8 @@ from app.infrastructure.drafting import AnthropicDrafter, RuleBasedDrafter, Rule
 from app.infrastructure.repositories import SqlDisputeRepository, SqlEvidenceRepository, SqlLedger
 from app.infrastructure.retrieval import HashingEmbedder, SqlPolicyStore
 from app.infrastructure.tools.disabled import DisabledToolGateway
+from app.infrastructure.tools.gateway import McpToolGateway, TokenBucket
+from app.infrastructure.tools.mcp_client import McpConnection, http_session_factory
 from app.infrastructure.workflow_store import (
     SqlApprovalRepository,
     SqlAuditLog,
@@ -43,13 +46,14 @@ class Container:
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
     checkpoint_pool: AsyncConnectionPool[Any]
-    http: httpx.AsyncClient  # shared outbound client; the tool gateway's MCP transport uses it (M3)
     policy_store: SqlPolicyStore
     drafter: RecommendationDrafter
     graph_services: GraphServices
     limits: RunLimits
     assist_graph: Any = None  # compiled in lifespan, after the checkpointer exists
     resolution_graph: Any = None
+    mcp: dict[str, Any] = field(default_factory=dict)  # server name -> McpConnection (closed on shutdown)
+    telemetry: dict[str, Any] = field(default_factory=dict)
     _closers: list[Any] = field(default_factory=list, repr=False)
 
     # --- request-scoped factories (one DB session per request; the API never names an adapter)
@@ -75,6 +79,10 @@ class Container:
         if self.resolution_graph is None:
             raise RuntimeError("resolution graph not compiled; is the lifespan running?")
         return ResolutionRunner(self.resolution_graph, self.limits)
+
+    def approval_service(self) -> ApprovalService:
+        gs = self.graph_services
+        return ApprovalService(gs.approvals, gs.audit, gs.clock)
 
     def graph_context(self, *, tenant_id: str, user_id: str, role: str, request_id: str) -> Ctx:
         return Ctx(tenant_id=tenant_id, user_id=user_id, role=role, request_id=request_id, services=self.graph_services)
@@ -104,7 +112,38 @@ def build_resolution_drafter(s: Settings) -> ResolutionDrafter:
 
 
 def build_tool_gateway(s: Settings) -> ToolGateway:
-    return DisabledToolGateway()  # M3 wires the MCP-backed gateway when APP_TOOLS_ENABLED=true
+    """Kill switch until `connect_tools` replaces it in the lifespan (only when APP_TOOLS_ENABLED=true)."""
+    return DisabledToolGateway()
+
+
+async def connect_tools(c: Container, factories: dict[str, Any] | None = None) -> ToolGateway:
+    """Open one MCP session per server, compare live tool schemas with the reviewed pins, build the gateway.
+    A pin mismatch disables only the affected tools; an unreachable server is logged and retried on first use, so
+    a provider outage never blocks the service from starting (starts and approvals keep working)."""
+    s = c.settings
+    if factories is None:
+        assert s.mcp_payments_token is not None and s.mcp_network_token is not None
+        factories = {
+            "payments": http_session_factory(
+                s.mcp_payments_url, s.mcp_payments_token.get_secret_value(), s.tool_timeout_s
+            ),
+            "network-gateway": http_session_factory(
+                s.mcp_network_url, s.mcp_network_token.get_secret_value(), s.tool_timeout_s
+            ),
+        }
+    for name, factory in factories.items():
+        c.mcp[name] = McpConnection(name, factory, s.tool_timeout_s)
+    gateway = McpToolGateway(
+        connections=c.mcp,
+        approvals=c.graph_services.approvals,
+        sessions=c.sessions,
+        limiter=TokenBucket(rate=s.tool_rate_per_s, burst=s.tool_burst),
+        max_attempts=s.tool_max_attempts,
+    )
+    for name in c.mcp:  # load tools and check pins now (T12.4); an unreachable server is retried on first use
+        if not await gateway.verify(name):
+            structlog.get_logger().error("tool_server_unavailable", server=name, alert=True)
+    return gateway
 
 
 async def build_container(s: Settings) -> Container:
@@ -118,10 +157,6 @@ async def build_container(s: Settings) -> Container:
         kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": 0},
     )
     await pool.open()
-    http = httpx.AsyncClient(
-        timeout=httpx.Timeout(s.http_timeout_s, connect=min(3.0, s.http_timeout_s)),
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-    )
     drafter = build_drafter(s)
     store = SqlPolicyStore(sessions, HashingEmbedder(s.embedding_dim))
     clock = SystemClock()
@@ -154,16 +189,17 @@ async def build_container(s: Settings) -> Container:
         engine=engine,
         sessions=sessions,
         checkpoint_pool=pool,
-        http=http,
         policy_store=store,
         drafter=drafter,
         graph_services=services,
         limits=RunLimits(recursion_limit=s.recursion_limit, max_concurrency=s.max_concurrency),
     )
-    c._closers = [engine.dispose, pool.close, http.aclose]
+    c._closers = [engine.dispose, pool.close]
     return c
 
 
 async def close_container(c: Container) -> None:
+    for conn in c.mcp.values():
+        await conn.close()
     for close in reversed(c._closers):
         await close()

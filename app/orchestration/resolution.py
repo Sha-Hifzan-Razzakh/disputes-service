@@ -24,6 +24,7 @@ from app.domain.reason_codes import Resolution, lookup
 from app.domain.rules import verify_draft
 from app.orchestration.context import Ctx
 from app.orchestration.evidence import wrapped_evidence_node
+from app.orchestration.instrument import instrument
 from app.orchestration.routing import route_after_evidence, route_after_execute, route_after_verify, route_approval
 from app.orchestration.state import SCHEMA_VERSION, ResolutionIn, ResolutionOut, ResolutionState
 
@@ -232,19 +233,10 @@ async def request_info(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[st
 async def request_approval(state: ResolutionState, runtime: Runtime[Ctx]) -> dict[str, Any]:
     s, ctx = runtime.context.services, runtime.context
     a, draft, tid = state["action"], state["draft"], _thread_id(runtime)
-    if a["auto"]:
-        await s.audit.record(
-            tenant_id=ctx.tenant_id,
-            actor="system:auto",
-            action="approval.auto",
-            subject=f"thread:{tid}",
-            request_id=ctx.request_id,
-            data={"amount": a["amount"]},
-            dedupe_key=f"approval.auto:{tid}",
-        )
-        return {"approval": {"approval_id": "auto", "status": "auto", "decided_by": "system:auto", "note": None}}
     aid = uuid.uuid5(APPROVAL_NS, tid)  # stable across replays → insert is idempotent
+    now = s.clock.now()
     summary: dict[str, object] = {k: draft[k] for k in ("resolution", "amount", "currency", "rationale", "citations")}
+    auto = a["auto"]
     await s.approvals.create(
         ApprovalRecord(
             id=aid,
@@ -254,12 +246,25 @@ async def request_approval(state: ResolutionState, runtime: Runtime[Ctx]) -> dic
             requested_by=state["requested_by"],
             required_role=a["required_role"] or "analyst",
             priority=a["priority"],
-            status="pending",
+            status="auto" if auto else "pending",
             summary=summary,
-            created_at=s.clock.now(),
+            created_at=now,
             expires_at=datetime.fromisoformat(a["expires_at"] or ""),
+            decided_by="system:auto" if auto else None,
+            decided_at=now if auto else None,
         )
     )
+    if auto:
+        await s.audit.record(
+            tenant_id=ctx.tenant_id,
+            actor="system:auto",
+            action="approval.auto",
+            subject=f"approval:{aid}",
+            request_id=ctx.request_id,
+            data={"amount": a["amount"]},
+            dedupe_key=f"approval.decided:{aid}",
+        )
+        return {"approval": {"approval_id": str(aid), "status": "auto", "decided_by": "system:auto", "note": None}}
     await s.threads.set_status(tid, "awaiting_approval")
     await s.audit.record(
         tenant_id=ctx.tenant_id,
@@ -445,24 +450,26 @@ def build_resolution_graph(
     evidence: CompiledStateGraph[Any, Any, Any, Any],
 ) -> StateGraph[ResolutionState, Ctx, ResolutionIn, ResolutionOut]:
     g = StateGraph(ResolutionState, context_schema=Ctx, input_schema=ResolutionIn, output_schema=ResolutionOut)
-    g.add_node("load_case", load_case, retry_policy=RETRY)
-    g.add_node("close_expired", close_expired, retry_policy=RETRY)
-    g.add_node("classify_reason", classify_reason)
-    g.add_node("gather_evidence", wrapped_evidence_node(evidence, evidence_input))
-    g.add_node("escalate_insufficient", escalate_insufficient)
-    g.add_node("draft_resolution", draft_resolution, retry_policy=RETRY)
-    g.add_node("verify", verify)
-    g.add_node("escalate_unverified", escalate_unverified)
-    g.add_node("prepare_action", prepare_action, retry_policy=RETRY)
-    g.add_node("request_info", request_info, retry_policy=RETRY)
-    g.add_node("request_approval", request_approval, retry_policy=RETRY)
-    g.add_node("approve", approve)
-    g.add_node("execute", execute, retry_policy=RETRY)
-    g.add_node("apply_resolution", apply_resolution, retry_policy=RETRY)
-    g.add_node("record_rejection", record_rejection)
-    g.add_node("record_expiry", record_expiry)
-    g.add_node("record_failure", record_failure)
-    g.add_node("notify", notify, retry_policy=RETRY)
+    g.add_node("load_case", instrument("resolution", "load_case", load_case), retry_policy=RETRY)
+    g.add_node("close_expired", instrument("resolution", "close_expired", close_expired), retry_policy=RETRY)
+    g.add_node("classify_reason", instrument("resolution", "classify_reason", classify_reason))
+    g.add_node(
+        "gather_evidence", instrument("resolution", "gather_evidence", wrapped_evidence_node(evidence, evidence_input))
+    )
+    g.add_node("escalate_insufficient", instrument("resolution", "escalate_insufficient", escalate_insufficient))
+    g.add_node("draft_resolution", instrument("resolution", "draft_resolution", draft_resolution), retry_policy=RETRY)
+    g.add_node("verify", instrument("resolution", "verify", verify))
+    g.add_node("escalate_unverified", instrument("resolution", "escalate_unverified", escalate_unverified))
+    g.add_node("prepare_action", instrument("resolution", "prepare_action", prepare_action), retry_policy=RETRY)
+    g.add_node("request_info", instrument("resolution", "request_info", request_info), retry_policy=RETRY)
+    g.add_node("request_approval", instrument("resolution", "request_approval", request_approval), retry_policy=RETRY)
+    g.add_node("approve", instrument("resolution", "approve", approve))
+    g.add_node("execute", instrument("resolution", "execute", execute), retry_policy=RETRY)
+    g.add_node("apply_resolution", instrument("resolution", "apply_resolution", apply_resolution), retry_policy=RETRY)
+    g.add_node("record_rejection", instrument("resolution", "record_rejection", record_rejection))
+    g.add_node("record_expiry", instrument("resolution", "record_expiry", record_expiry))
+    g.add_node("record_failure", instrument("resolution", "record_failure", record_failure))
+    g.add_node("notify", instrument("resolution", "notify", notify), retry_policy=RETRY)
 
     g.add_edge(START, "load_case")
     g.add_edge("classify_reason", "gather_evidence")

@@ -21,6 +21,7 @@ from app.application.ports import TransientError
 from app.domain.reason_codes import ReasonFamily
 from app.domain.rules import grade_evidence as grade
 from app.orchestration.context import Ctx
+from app.orchestration.instrument import instrument
 from app.orchestration.routing import route_after_grade
 from app.orchestration.state import EXCERPT_CHARS, Evidence, EvidenceState
 
@@ -90,10 +91,10 @@ def grade_evidence(state: EvidenceState, runtime: Runtime[Ctx]) -> dict[str, Any
 
 def build_evidence_graph() -> StateGraph[EvidenceState, Ctx, EvidenceState, EvidenceState]:
     g = StateGraph(EvidenceState, context_schema=Ctx)
-    g.add_node("plan_queries", plan_queries)
-    g.add_node("retrieve_policy", retrieve_policy, retry_policy=READ_RETRY)
-    g.add_node("gather_txn_evidence", gather_txn_evidence)
-    g.add_node("grade_evidence", grade_evidence)
+    g.add_node("plan_queries", instrument("evidence", "plan_queries", plan_queries))
+    g.add_node("retrieve_policy", instrument("evidence", "retrieve_policy", retrieve_policy), retry_policy=READ_RETRY)
+    g.add_node("gather_txn_evidence", instrument("evidence", "gather_txn_evidence", gather_txn_evidence))
+    g.add_node("grade_evidence", instrument("evidence", "grade_evidence", grade_evidence))
     g.add_edge(START, "plan_queries")
     g.add_conditional_edges("plan_queries", fan_out, ["retrieve_policy", "gather_txn_evidence"])
     g.add_edge("retrieve_policy", "grade_evidence")

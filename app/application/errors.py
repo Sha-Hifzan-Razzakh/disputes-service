@@ -32,3 +32,11 @@ def is_retryable(exc: BaseException) -> bool:
     from app.application.ports import TransientError
 
     return isinstance(exc, TransientError)
+
+
+class Forbidden(Exception):
+    """Authenticated but not allowed (role rank, four-eyes)."""
+
+
+class ApprovalChanged(Exception):
+    """The approver decided on a summary that differs from the stored one (stale screen or tampered payload)."""

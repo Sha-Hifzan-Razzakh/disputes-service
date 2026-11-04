@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
@@ -33,6 +34,8 @@ def run_config(thread_id: str, limits: RunLimits, *, ctx: Ctx) -> RunnableConfig
         "recursion_limit": limits.recursion_limit,
         "max_concurrency": limits.max_concurrency,
         "metadata": {"tenant_id": ctx.tenant_id, "request_id": ctx.request_id, "user_id": ctx.user_id},
+        "run_name": thread_id.split(":", 1)[0],
+        "tags": [thread_id.split(":", 1)[0], f"tenant:{ctx.tenant_id}"],
     }
 
 
@@ -123,6 +126,7 @@ class ResolutionRunner:
         return await self.view(thread_id, ctx)
 
     async def _invoke(self, inp: Any, thread_id: str, ctx: Ctx) -> None:
+        structlog.contextvars.bind_contextvars(thread_id=thread_id, tenant_id=ctx.tenant_id)
         try:
             await self.graph.ainvoke(inp, run_config(thread_id, self.limits, ctx=ctx), context=ctx, durability="sync")
         except GraphRecursionError as e:

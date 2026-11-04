@@ -45,3 +45,21 @@ async def test_assist_fixture_resumes_with_history_and_upgraded_schema(
     assert after.values["schema_version"] == 2
     assert after.values["history"][: len(old["history"])] == old["history"]  # history kept, in order
     assert all(e["source"] in {"policy", "ledger", "merchant"} for e in after.values["evidence"])
+
+
+RESOLUTION_FIXTURES = sorted(Path("tests/fixtures/checkpoints").glob("*_resolution_*.json"))
+
+
+@pytest.mark.parametrize("fixture", RESOLUTION_FIXTURES, ids=[f.stem for f in RESOLUTION_FIXTURES])
+def test_paused_resolution_fixture_keys_are_still_understood(fixture: Path) -> None:
+    """A thread paused at approval by an earlier release resumes into current code: every state key it carries
+    must still be declared, and its schema version must not be newer than ours (upgrade hooks go only forward)."""
+    import typing
+
+    from app.orchestration import state as S
+
+    doc = json.loads(fixture.read_text())
+    keys = {k for k in doc["values"] if not k.startswith(("branch:", "__"))}
+    assert keys <= set(typing.get_type_hints(S.ResolutionState)), keys - set(typing.get_type_hints(S.ResolutionState))
+    assert doc["values"]["schema_version"] <= S.SCHEMA_VERSION["resolution"]
+    assert doc["values"]["approval"]["status"] == "pending"

@@ -1,0 +1,191 @@
+{
+  "app_version": "2.0.0",
+  "checkpoint_id": "1f1d856a-2cbc-6800-8007-63d48266b4d5",
+  "graph": "resolution",
+  "metadata": {
+    "parents": {},
+    "request_id": "d3ceb403e4154e7f8eae1e2259cef80d",
+    "source": "loop",
+    "step": 7,
+    "tenant_id": "northwind",
+    "user_id": "ana"
+  },
+  "state_schema": "resolution-v1",
+  "thread_id": "resolution:6cf061f3-72b5-4c8e-a338-839b7c51c6ce:1",
+  "values": {
+    "action": {
+      "amount": null,
+      "auto": false,
+      "currency": "USD",
+      "expires_at": "2026-11-07T13:50:03.502296+00:00",
+      "idempotency_key": "5e24759c518b0c9a8914ccfeb0c93a5a119715b3f91ee0aeb833e15e2da30309",
+      "kind": "representment",
+      "priority": "normal",
+      "required_role": "analyst",
+      "tool": "network.submit_representment",
+      "urgent": false
+    },
+    "approval": {
+      "approval_id": "c778d912-7ddf-5c08-88fb-6124710613df",
+      "decided_by": null,
+      "note": null,
+      "status": "pending"
+    },
+    "branch:to:approve": null,
+    "case": {
+      "dispute": {
+        "amount": "189.00",
+        "currency": "USD",
+        "id": "6cf061f3-72b5-4c8e-a338-839b7c51c6ce",
+        "network": "VISA",
+        "reason_code": "10.4",
+        "respond_by": "2026-12-04T13:50:03.313937+00:00",
+        "status": "UNDER_REVIEW",
+        "version": 3
+      },
+      "evidence": [],
+      "transaction": {
+        "amount": "189.00",
+        "avs_result": "Y",
+        "cvv_result": "M",
+        "delivery_status": "DELIVERED",
+        "delivery_tracking": "1Z999AA10123456784",
+        "ref": "NW-1001",
+        "refunded": "0.00",
+        "three_ds_authenticated": true
+      }
+    },
+    "dispute_id": "6cf061f3-72b5-4c8e-a338-839b7c51c6ce",
+    "draft": {
+      "amount": null,
+      "citations": [
+        "ledger:three_ds",
+        "policy:b8158c44-c567-4bcb-9f98-a14a0ab0d5f8"
+      ],
+      "currency": "USD",
+      "rationale": "Recommend CONTEST: 3-D Secure authentication shifts fraud liability.",
+      "resolution": "CONTEST"
+    },
+    "evidence": [
+      {
+        "excerpt": "AVS result Y, CVV result M",
+        "id": "ledger:avs_cvv",
+        "kind": "avs_cvv_result",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "AVS / CVV"
+      },
+      {
+        "excerpt": "Carrier status DELIVERED, tracking 1Z999AA10123456784",
+        "id": "ledger:delivery",
+        "kind": "delivery_proof",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "Delivery"
+      },
+      {
+        "excerpt": "Prior refunds 0.00 on a 189.00 transaction",
+        "id": "ledger:refunds",
+        "kind": "refund_none",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "Refunds"
+      },
+      {
+        "excerpt": "3-D Secure authenticated for NW-1001",
+        "id": "ledger:three_ds",
+        "kind": "three_ds_result",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "3-D Secure"
+      },
+      {
+        "excerpt": "For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3-D Secure, because successful authentication shifts fraud liability to the issuer.",
+        "id": "policy:b8158c44-c567-4bcb-9f98-a14a0ab0d5f8",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.4118,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Without 3-D Secure authentication and without matching AVS and CVV results the merchant should normally accept the dispute and refund the cardholder, because a representment is unlikely to succeed.",
+        "id": "policy:c1cabad6-07ed-4cd9-8e3f-3cd3034a6119",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.3977,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Compelling evidence for card-absent fraud includes a full AVS match together with a CVV match, prior undisputed transactions on the same card from the same device or shipping address, and proof that the goods were delivered to the cardholder's billing address.",
+        "id": "policy:1a8bd0ef-f055-4663-963a-e7c406f41127",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.2715,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Orders above 250 USD are shipped with signature on delivery. For fraud disputes on 3-D Secure authenticated orders, Northwind contests by default.",
+        "id": "policy:372a7606-a20d-4ea1-aa49-9797177d580e",
+        "kind": "merchant_policy",
+        "scope": "tenant",
+        "score": 0.191,
+        "source": "policy",
+        "title": "Northwind refund and dispute policy"
+      },
+      {
+        "excerpt": "For merchandise-not-received disputes the cardholder states the goods never arrived. The merchant can contest only with proof of delivery: a carrier tracking record that shows the parcel delivered to the address the cardholder provided, with delivery date.",
+        "id": "policy:e1d5fda6-25e1-44a5-aa38-f2806b80fb91",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.1006,
+        "source": "policy",
+        "title": "Network rules summary: merchandise not received (Visa 13.1)"
+      },
+      {
+        "excerpt": "If the cardholder returned the item and the merchant received it, the merchant should refund in full.",
+        "id": "policy:a2120e5f-2d0c-486a-a28c-a8d3ec41e48b",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.0738,
+        "source": "policy",
+        "title": "Network rules summary: not as described or defective (Visa 13.3, Mastercard 4853)"
+      },
+      {
+        "excerpt": "Merchants must respond to a dispute before the response deadline. In this service the default response window is 30 days for Visa and 45 days for Mastercard from the date the dispute was opened.",
+        "id": "policy:12949277-782a-4d2d-94b9-25611f46e051",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.0573,
+        "source": "policy",
+        "title": "Network rules summary: response deadlines"
+      }
+    ],
+    "evidence_grade": {
+      "best_score": 0.4118,
+      "can_retry": true,
+      "missing": [],
+      "sufficient": true
+    },
+    "instructions": "",
+    "queries": [
+      "VISA 10.4 FRAUD",
+      "card-absent fraud 3-D Secure AVS CVV liability merchant policy"
+    ],
+    "reason_family": "FRAUD",
+    "requested_by": "ana",
+    "retrieval_attempts": 1,
+    "schema_version": 1,
+    "verification": {
+      "can_refine": false,
+      "passed": true,
+      "violations": []
+    }
+  }
+}

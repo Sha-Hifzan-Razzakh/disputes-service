@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import AppContainer, Principal, bounded_run, graph_context, require_role, resolution_runner
 from app.api.schemas_v2 import ResolutionOut, StartResolutionIn
@@ -49,3 +53,37 @@ async def get_resolution(
     ctx: Context,
 ) -> ResolutionOut:
     return ResolutionOut.of(await runner.view(thread_id, ctx, dispute_id=dispute_id))
+
+
+TERMINAL_THREAD = {"done", "failed", "cancelled"}
+
+
+@router.get("/{thread_id}/stream")
+async def stream_resolution(
+    dispute_id: uuid.UUID,
+    thread_id: str,
+    _: Annotated[Principal, Depends(require_role("analyst"))],
+    runner: Runner,
+    ctx: Context,
+    poll_s: float = 0.5,
+    idle_s: float = 60.0,
+) -> StreamingResponse:
+    """Server-sent events: one `state` event per change (status, next nodes, outcome), closing when the thread
+    reaches a terminal status or nothing changed for `idle_s` (pressure card: LIGHT/Scale)."""
+    first = await runner.view(thread_id, ctx, dispute_id=dispute_id)  # 404 before the stream opens
+
+    async def events() -> AsyncIterator[str]:
+        last, view, idle = None, first, 0.0
+        while True:
+            snapshot = {k: view[k] for k in ("status", "next", "outcome", "outcome_reason")}
+            if snapshot != last:
+                yield f"event: state\ndata: {json.dumps(snapshot)}\n\n"
+                last, idle = snapshot, 0.0
+            if view["status"] in TERMINAL_THREAD or idle >= idle_s:
+                yield "event: end\ndata: {}\n\n"
+                return
+            await asyncio.sleep(poll_s)
+            idle += poll_s
+            view = await runner.view(thread_id, ctx, dispute_id=dispute_id)
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})

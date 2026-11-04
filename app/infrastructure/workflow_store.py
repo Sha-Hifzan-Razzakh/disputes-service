@@ -308,6 +308,21 @@ class SqlSideEffectLedger:
                 .values(status=status, external_ref=external_ref, error=error)
             )
 
+    async def stale_unknown(self, older_than: datetime, *, limit: int) -> list[SideEffectRecord]:
+        async with transaction(self.sessions) as s:
+            rows = (
+                await s.scalars(
+                    select(SideEffectRow)
+                    .where(SideEffectRow.status.in_(("unknown", "pending")), SideEffectRow.updated_at < older_than)
+                    .order_by(SideEffectRow.updated_at)
+                    .limit(limit)
+                )
+            ).all()
+        return [
+            SideEffectRecord(r.idempotency_key, r.tenant_id, r.dispute_id, r.kind, r.status, r.external_ref, r.error)
+            for r in rows
+        ]
+
 
 class SqlAuditLog:
     def __init__(self, sessions: Sessions) -> None:

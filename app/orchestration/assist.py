@@ -17,6 +17,7 @@ from app.application.ports import PolicyHit
 from app.domain.reason_codes import lookup
 from app.orchestration.context import Ctx
 from app.orchestration.evidence import wrapped_evidence_node
+from app.orchestration.instrument import instrument
 from app.orchestration.state import SCHEMA_VERSION, AssistStateV2
 
 AssistState = AssistStateV2
@@ -76,10 +77,12 @@ def build_assist_graph(
     evidence: CompiledStateGraph[Any, Any, Any, Any],
 ) -> StateGraph[AssistState, Ctx, AssistState, AssistState]:
     g = StateGraph(AssistState, context_schema=Ctx)
-    g.add_node("upgrade_state", upgrade_state)
-    g.add_node("classify_reason", classify_reason)
-    g.add_node("gather_evidence", wrapped_evidence_node(evidence, evidence_input))
-    g.add_node("draft_recommendation", draft_recommendation)
+    g.add_node("upgrade_state", instrument("assist", "upgrade_state", upgrade_state))
+    g.add_node("classify_reason", instrument("assist", "classify_reason", classify_reason))
+    g.add_node(
+        "gather_evidence", instrument("assist", "gather_evidence", wrapped_evidence_node(evidence, evidence_input))
+    )
+    g.add_node("draft_recommendation", instrument("assist", "draft_recommendation", draft_recommendation))
     g.add_edge(START, "upgrade_state")
     g.add_edge("upgrade_state", "classify_reason")
     g.add_edge("classify_reason", "gather_evidence")

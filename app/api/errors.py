@@ -7,7 +7,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.application.errors import ApprovalDecided, ApprovalExpired, ResolutionInProgress, RunAborted
+from app.application.errors import (
+    ApprovalChanged,
+    ApprovalDecided,
+    ApprovalExpired,
+    Forbidden,
+    ResolutionInProgress,
+    RunAborted,
+)
 from app.domain.errors import DomainError, InvalidTransition, NotFound, VersionConflict
 
 
@@ -40,6 +47,14 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApprovalExpired)
     async def _ae(req: Request, e: ApprovalExpired) -> JSONResponse:
         return _envelope(req, 410, "approval_expired", str(e))
+
+    @app.exception_handler(Forbidden)
+    async def _fb(req: Request, e: Forbidden) -> JSONResponse:
+        return _envelope(req, 403, "forbidden", str(e))
+
+    @app.exception_handler(ApprovalChanged)
+    async def _ac(req: Request, e: ApprovalChanged) -> JSONResponse:
+        return _envelope(req, 409, "approval_changed", str(e))
 
     @app.exception_handler(RunAborted)
     async def _ra(req: Request, e: RunAborted) -> JSONResponse:
