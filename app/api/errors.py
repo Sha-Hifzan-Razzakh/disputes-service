@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.application.errors import ApprovalDecided, ApprovalExpired, ResolutionInProgress, RunAborted
 from app.domain.errors import DomainError, InvalidTransition, NotFound, VersionConflict
 
 
@@ -26,6 +28,23 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(VersionConflict)
     async def _vc(req: Request, e: VersionConflict) -> JSONResponse:
         return _envelope(req, 409, "version_conflict", str(e))
+
+    @app.exception_handler(ResolutionInProgress)
+    async def _rip(req: Request, e: ResolutionInProgress) -> JSONResponse:
+        return _envelope(req, 409, "resolution_in_progress", str(e))
+
+    @app.exception_handler(ApprovalDecided)
+    async def _ad(req: Request, e: ApprovalDecided) -> JSONResponse:
+        return _envelope(req, 409, "approval_decided", str(e))
+
+    @app.exception_handler(ApprovalExpired)
+    async def _ae(req: Request, e: ApprovalExpired) -> JSONResponse:
+        return _envelope(req, 410, "approval_expired", str(e))
+
+    @app.exception_handler(RunAborted)
+    async def _ra(req: Request, e: RunAborted) -> JSONResponse:
+        structlog.get_logger().error("run_aborted", thread_id=e.thread_id, reason=e.reason, alert=True)
+        return _envelope(req, 500, "run_aborted", f"run {e.thread_id} stopped: {e.reason}")
 
     @app.exception_handler(DomainError)
     async def _de(req: Request, e: DomainError) -> JSONResponse:

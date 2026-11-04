@@ -10,7 +10,7 @@ import pytest
 from app.orchestration import state as S
 from app.orchestration.reducers import merge_evidence, write_once
 
-SCHEMAS = {"resolution": S.ResolutionState, "assist": S.AssistStateV2}
+SCHEMAS = {"resolution": S.ResolutionState, "assist": S.AssistStateV2, "evidence": S.EvidenceState}
 
 
 def _owners_of(graph: str) -> dict[str, set[str]]:
@@ -35,15 +35,16 @@ def test_multi_writer_fields_are_declared_and_reduced(graph: str) -> None:
         if len(owners) > 1:
             assert field in S.MULTI_WRITER, f"{field} has owners {owners} but no multi-writer rule"
     reducers = {f: h.__metadata__[0] for f, h in hints.items() if hasattr(h, "__metadata__")}
-    assert reducers.get("evidence") is merge_evidence
-    if graph == "resolution":
-        assert reducers["outcome"] is write_once and reducers["outcome_reason"] is write_once
+    if graph == "evidence":
+        assert reducers == {"evidence": merge_evidence}  # parallel Send branches merge
+    elif graph == "resolution":
+        assert reducers == {"outcome": write_once, "outcome_reason": write_once}
     else:
-        assert reducers["history"] is operator.add  # v1 threads keep counting turns
+        assert reducers == {"history": operator.add}  # v1 threads keep counting turns; evidence replaces per turn
 
 
 def test_no_identity_or_secrets_in_any_state() -> None:
-    for schema in (*SCHEMAS.values(), S.EvidenceState, S.ResolutionIn, S.ResolutionOut):
+    for schema in (*SCHEMAS.values(), S.ResolutionIn, S.ResolutionOut):
         assert not set(typing.get_type_hints(schema)) & S.FORBIDDEN_KEYS
 
 
@@ -54,5 +55,5 @@ def test_io_schemas_are_subsets_of_state() -> None:
 
 
 def test_sensitive_fields_exist() -> None:
-    every = set().union(*(typing.get_type_hints(s) for s in (*SCHEMAS.values(), S.EvidenceState)))
+    every = set().union(*(typing.get_type_hints(s) for s in SCHEMAS.values()))
     assert set(S.SENSITIVE) <= every

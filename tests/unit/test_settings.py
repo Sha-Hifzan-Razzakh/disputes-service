@@ -15,6 +15,15 @@ def test_dev_defaults_are_valid() -> None:
         ({"env": "prod", "checkpoint_auto_setup": False, "jwt_secret": SecretStr("dev-only-x")}, "APP_JWT_SECRET"),
         ({"env": "prod", "jwt_secret": SecretStr("x" * 40)}, "APP_CHECKPOINT_AUTO_SETUP"),
         ({"model_provider": "anthropic"}, "APP_ANTHROPIC_API_KEY"),
+        (
+            {
+                "env": "prod",
+                "jwt_secret": SecretStr("x" * 40),
+                "checkpoint_auto_setup": False,
+                "database_url": SecretStr("postgresql+psycopg://u@db/disputes"),
+            },
+            "sslmode",
+        ),
         ({"run_timeout_s": 0}, "greater than 0"),
     ],
 )

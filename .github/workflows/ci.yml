@@ -22,7 +22,7 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: uv run ruff check . && uv run ruff format --check .
-      - run: uv run mypy app seeds
+      - run: uv run mypy app seeds scripts
       - run: uv run lint-imports
       - run: uv run pytest -q
         env:

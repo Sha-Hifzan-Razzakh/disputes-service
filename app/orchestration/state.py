@@ -12,10 +12,10 @@ Ownership — resolution graph (thread `resolution:<dispute_id>:<n>`, SCHEMA_VER
     schema_version    load_case                              upgrade hook, tests             replace       no
     case              load_case                              every later node                replace       redact
     reason_family     classify_reason                        evidence, draft, verify         replace       no
-    queries           plan_queries                           retrieve_policy (via Send)      replace       no
-    retrieval_attempts plan_queries                          route_after_grade               replace       no
-    evidence          retrieve_policy, gather_txn_evidence   grade, draft, verify, execute   merge_evidence reference
-    evidence_grade    grade_evidence                         route_after_grade, escalate     replace       no
+    queries           gather_evidence (wrapped subgraph)     admin history                   replace       no
+    retrieval_attempts gather_evidence                       escalate_insufficient           replace       no
+    evidence          gather_evidence                        draft, verify, execute          replace       reference
+    evidence_grade    gather_evidence                        route_after_evidence, escalate  replace       no
     draft             draft_resolution                       verify, prepare_action, API     replace       redact
     verification      verify                                 route_after_verify, draft       replace       no
     refine_attempts   verify                                 route_after_verify              replace       no
@@ -24,6 +24,11 @@ Ownership — resolution graph (thread `resolution:<dispute_id>:<n>`, SCHEMA_VER
     execution         execute                                apply_resolution, API           replace       no
     outcome           terminal nodes (exclusive paths)       API                             write_once    no
     outcome_reason    terminal nodes (exclusive paths)       API                             write_once    no
+
+Inside the evidence subgraph (EvidenceState) `evidence` has two parallel writers — `retrieve_policy` (one `Send`
+per query) and `gather_txn_evidence` — and uses `merge_evidence`. The wrapper node copies the merged result into
+the parent, where it has one writer per run, so the parent field replaces (an assist turn never inherits the previous
+turn's evidence).
 
 Ownership — assist graph v2 (thread `assist:<dispute_id>`, SCHEMA_VERSION["assist"] = 2): see
 docs/state_inventory.md; `history` keeps `operator.add` so v1 threads keep counting turns, and the legacy keys
@@ -58,6 +63,7 @@ class EvidenceGrade(TypedDict):
     sufficient: bool
     missing: list[str]
     best_score: float
+    can_retry: bool  # retrieval_attempts < max; lets the router stay a pure function of state
 
 
 class Draft(TypedDict):
@@ -71,6 +77,7 @@ class Draft(TypedDict):
 class Verification(TypedDict):
     passed: bool
     violations: list[str]  # R1..R6 codes with a short reason, e.g. "R1: amount 999.00 > disputed 640.00"
+    can_refine: bool  # failed and refine budget left
 
 
 class Action(TypedDict):
@@ -82,6 +89,7 @@ class Action(TypedDict):
     required_role: str | None
     priority: str  # normal | urgent
     urgent: bool
+    auto: bool  # tenant auto-approve applies (never for CONTEST or urgent)
     expires_at: str | None
 
 
@@ -126,7 +134,7 @@ class ResolutionState(TypedDict, total=False):
     reason_family: str
     queries: list[str]
     retrieval_attempts: int
-    evidence: Annotated[list[Evidence], merge_evidence]
+    evidence: list[Evidence]
     evidence_grade: EvidenceGrade
     draft: Draft
     verification: Verification
@@ -167,7 +175,7 @@ class AssistStateV2(TypedDict, total=False):
     reason_family: str
     queries: list[str]
     retrieval_attempts: int
-    evidence: Annotated[list[Evidence], merge_evidence]
+    evidence: list[Evidence]
     evidence_grade: EvidenceGrade
     recommendation: str
     suggested_resolution: str
@@ -184,10 +192,7 @@ OWNERS: dict[str, dict[str, set[str]]] = {
         INPUT: {"dispute_id", "requested_by", "instructions"},
         "load_case": {"schema_version", "case"},
         "classify_reason": {"reason_family"},
-        "plan_queries": {"queries", "retrieval_attempts"},
-        "retrieve_policy": {"evidence"},
-        "gather_txn_evidence": {"evidence"},
-        "grade_evidence": {"evidence_grade"},
+        "gather_evidence": {"queries", "retrieval_attempts", "evidence", "evidence_grade"},
         "draft_resolution": {"draft"},
         "verify": {"verification", "refine_attempts"},
         "prepare_action": {"action"},
@@ -208,17 +213,21 @@ OWNERS: dict[str, dict[str, set[str]]] = {
         "legacy": {"policy_hits"},
         "upgrade_state": {"schema_version"},
         "classify_reason": {"reason_family"},
+        "gather_evidence": {"queries", "retrieval_attempts", "evidence", "evidence_grade"},
+        "draft_recommendation": {"recommendation", "suggested_resolution", "citations", "history"},
+    },
+    "evidence": {
+        INPUT: {"network", "reason_code", "reason_family", "question", "facts"},
         "plan_queries": {"queries", "retrieval_attempts"},
         "retrieve_policy": {"evidence"},
         "gather_txn_evidence": {"evidence"},
         "grade_evidence": {"evidence_grade"},
-        "draft_recommendation": {"recommendation", "suggested_resolution", "citations", "history"},
     },
 }
 
 # Fields that may legitimately have more than one owner, and the rule that makes that safe.
 MULTI_WRITER: dict[str, str] = {
-    "evidence": "merge_evidence (parallel branches)",
+    "evidence": "merge_evidence (parallel branches inside the evidence subgraph)",
     "approval": "request_approval then approve: sequential, same path",
     "outcome": "write_once (mutually exclusive terminal paths)",
     "outcome_reason": "write_once (mutually exclusive terminal paths)",

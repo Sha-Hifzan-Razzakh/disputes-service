@@ -8,10 +8,17 @@ services:
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
+  migrate:
+    build: .
+    command: ["sh", "-c", "alembic upgrade head && python scripts/checkpoint_setup.py"]
+    environment:
+      APP_DATABASE_URL: postgresql+psycopg://postgres:dev@db:5432/disputes
+    depends_on:
+      db: {condition: service_healthy}
   app:
     build: .
     environment:
       APP_DATABASE_URL: postgresql+psycopg://postgres:dev@db:5432/disputes
     ports: ["8000:8000"]
     depends_on:
-      db: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}

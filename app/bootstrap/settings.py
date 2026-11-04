@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(5, ge=1, le=50)
     checkpoint_pool_max: int = Field(4, ge=1, le=50)
     checkpoint_auto_setup: bool = True  # dev convenience; staging/prod run scripts/checkpoint_setup.py at deploy
+    checkpoint_retention_days: int = Field(90, ge=7)  # finished threads older than this are pruned
 
     # --- auth
     jwt_secret: SecretStr = SecretStr("dev-only-secret-change-me-in-every-env")
@@ -37,6 +38,7 @@ class Settings(BaseSettings):
     http_timeout_s: float = Field(10.0, gt=0)
     tool_timeout_s: float = Field(4.0, gt=0)
     tool_max_attempts: int = Field(3, ge=1, le=5)
+    tools_enabled: bool = False  # kill switch: false → approved actions end EXECUTION_FAILED without any call
     mcp_payments_url: str = "http://localhost:8101/mcp"
     mcp_network_url: str = "http://localhost:8102/mcp"
 
@@ -67,6 +69,10 @@ class Settings(BaseSettings):
                 raise ValueError("APP_JWT_SECRET must be set outside dev/test")
             if self.checkpoint_auto_setup:
                 raise ValueError("APP_CHECKPOINT_AUTO_SETUP must be false outside dev/test (run it at deploy)")
+            if "sslmode=require" not in self.database_url.get_secret_value() and "sslmode=verify" not in (
+                self.database_url.get_secret_value()
+            ):
+                raise ValueError("APP_DATABASE_URL must use sslmode=require or verify-full outside dev/test")
         if self.model_provider == "anthropic" and self.anthropic_api_key is None:
             raise ValueError("APP_ANTHROPIC_API_KEY is required when APP_MODEL_PROVIDER=anthropic")
         return self

@@ -19,10 +19,10 @@ from app.application.case import CaseService
 from app.application.ports import Ledger
 from app.application.services import DisputeService, PolicyService
 from app.bootstrap.container import Container
+from app.domain.roles import ROLE_RANK
 from app.orchestration.context import Ctx
-from app.orchestration.runners import AssistRunner
+from app.orchestration.runners import AssistRunner, ResolutionRunner
 
-ROLE_RANK = {"analyst": 1, "ops_lead": 2, "admin": 3}
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -99,6 +99,10 @@ def policy_service(c: AppContainer) -> PolicyService:
 
 def assist_runner(c: AppContainer) -> AssistRunner:
     return c.assist_runner()
+
+
+def resolution_runner(c: AppContainer) -> ResolutionRunner:
+    return c.resolution_runner()
 
 
 def graph_context(request: Request, c: AppContainer, p: Annotated[Principal, Depends(current_principal)]) -> Ctx:

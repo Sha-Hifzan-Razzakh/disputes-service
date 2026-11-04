@@ -1,18 +1,23 @@
-"""Invokes compiled graphs: builds the input from a case snapshot, the thread config and the run limits.
+"""Invokes compiled graphs: input, thread config, run limits, durability and the read model the API returns.
 
-The runner lives in orchestration (not application) because it needs `Ctx` and graph config; the API calls it and
-wraps it in the run timeout.
+The runners live in orchestration (not application) because they need `Ctx`, graph config and `Command`; the API
+calls them and wraps them in the run timeout.
 """
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 
+from app.application.errors import RunAborted
 from app.application.ports import CaseSnapshot
+from app.domain.errors import InvalidTransition, NotFound
 from app.orchestration.context import Ctx
 
 
@@ -31,15 +36,17 @@ def run_config(thread_id: str, limits: RunLimits, *, ctx: Ctx) -> RunnableConfig
     }
 
 
+Graph = CompiledStateGraph[Any, Any, Any, Any]
+
+
 @dataclass
 class AssistRunner:
-    graph: CompiledStateGraph[Any, Any, Any, Any]
+    graph: Graph
     limits: RunLimits
 
     async def ask(self, *, case: CaseSnapshot, question: str, ctx: Ctx) -> dict[str, Any]:
         d, txn = case.dispute, case.transaction
         state: dict[str, Any] = {
-            "tenant_id": ctx.tenant_id,  # legacy key kept for checkpoint shape; nodes read ctx.tenant_id
             "dispute": {
                 "id": str(d.id),
                 "network": d.network.value,
@@ -69,4 +76,112 @@ class AssistRunner:
             "suggested_resolution": out["suggested_resolution"],
             "citations": out["citations"],
             "turns": len(out.get("history", [])),
+        }
+
+
+@dataclass
+class ResolutionRunner:
+    """Start, inspect and resume resolution threads. Durability is "sync": each super-step's checkpoint is written
+    before the next starts, so a crash never loses a completed side-effect step (G5/G6)."""
+
+    graph: Graph
+    limits: RunLimits
+
+    async def start(self, *, dispute_id: uuid.UUID, instructions: str, ctx: Ctx) -> dict[str, Any]:
+        s = ctx.services
+        snap = await s.cases.snapshot(ctx.tenant_id, dispute_id)  # NotFound for other tenants (404)
+        if not snap.dispute.can_start_resolution:
+            raise InvalidTransition(snap.dispute.status, "start_resolution")
+        thread_id = await s.threads.start(
+            tenant_id=ctx.tenant_id, dispute_id=dispute_id, graph="resolution", started_by=ctx.user_id
+        )
+        await s.audit.record(
+            tenant_id=ctx.tenant_id,
+            actor=ctx.user_id,
+            action="resolution.started",
+            subject=f"thread:{thread_id}",
+            request_id=ctx.request_id,
+            data={},
+            dedupe_key=f"resolution.started:{thread_id}",
+        )
+        inp = {"dispute_id": str(dispute_id), "requested_by": ctx.user_id, "instructions": instructions}
+        await self._invoke(inp, thread_id, ctx)
+        return await self.view(thread_id, ctx, dispute_id=dispute_id)
+
+    async def resume(self, thread_id: str, value: dict[str, Any], ctx: Ctx) -> dict[str, Any]:
+        """Continue a paused thread with a server-built resume value (approvals endpoint / sweeper, M3)."""
+        await ctx.services.threads.get(ctx.tenant_id, thread_id)
+        await self._invoke(Command(resume=value), thread_id, ctx)
+        return await self.view(thread_id, ctx)
+
+    async def recover(self, thread_id: str, ctx: Ctx) -> dict[str, Any]:
+        """Continue a thread that failed mid-run from its last checkpoint (admin resume, M3). Completed super-steps
+        are not re-run; the failed step runs again and is idempotent."""
+        await ctx.services.threads.get(ctx.tenant_id, thread_id)
+        await ctx.services.threads.set_status(thread_id, "running")
+        await self._invoke(None, thread_id, ctx)
+        return await self.view(thread_id, ctx)
+
+    async def _invoke(self, inp: Any, thread_id: str, ctx: Ctx) -> None:
+        try:
+            await self.graph.ainvoke(inp, run_config(thread_id, self.limits, ctx=ctx), context=ctx, durability="sync")
+        except GraphRecursionError as e:
+            await ctx.services.threads.set_status(thread_id, "failed")
+            raise RunAborted(thread_id, f"recursion limit {self.limits.recursion_limit} reached") from e
+        except Exception:
+            await ctx.services.threads.set_status(thread_id, "failed")
+            raise
+
+    async def history(self, thread_id: str, ctx: Ctx, *, limit: int) -> list[dict[str, Any]]:
+        """Checkpoint trail for admins: step, writer node, next nodes, outcome. Values are not returned (SENSITIVE)."""
+        await ctx.services.threads.get(ctx.tenant_id, thread_id)
+        out: list[dict[str, Any]] = []
+        async for snap in self.graph.aget_state_history(run_config(thread_id, self.limits, ctx=ctx), limit=limit):
+            meta = snap.metadata or {}
+            ran = [
+                {"node": t.name, "wrote": sorted(t.result) if isinstance(t.result, dict) else []}
+                for t in snap.tasks
+                if t.result is not None
+            ]
+            out.append(
+                {
+                    "checkpoint_id": snap.config["configurable"]["checkpoint_id"],
+                    "step": meta.get("step"),
+                    "source": meta.get("source"),
+                    "ran": ran,  # tasks executed from this checkpoint: node names and the keys they wrote, never values
+                    "next": list(snap.next),
+                    "created_at": snap.created_at,
+                    "outcome": snap.values.get("outcome"),
+                    "interrupted": bool(snap.interrupts),
+                }
+            )
+        return out
+
+    async def view(self, thread_id: str, ctx: Ctx, *, dispute_id: uuid.UUID | None = None) -> dict[str, Any]:
+        rec = await ctx.services.threads.get(ctx.tenant_id, thread_id)  # tenant-filtered: other tenant → 404
+        if dispute_id is not None and rec.dispute_id != dispute_id:
+            raise NotFound("thread", thread_id)
+        snap = await self.graph.aget_state(run_config(thread_id, self.limits, ctx=ctx))
+        v = snap.values
+        action = v.get("action") or {}
+        approval = v.get("approval") or {}
+        return {
+            "thread_id": thread_id,
+            "dispute_id": str(rec.dispute_id),
+            "status": rec.status,
+            "outcome": v.get("outcome") or ("AWAITING_APPROVAL" if snap.interrupts else None),
+            "outcome_reason": v.get("outcome_reason"),
+            "draft": v.get("draft"),
+            "approval": {
+                "approval_id": approval.get("approval_id"),
+                "status": approval.get("status"),
+                "required_role": action.get("required_role"),
+                "priority": action.get("priority"),
+                "expires_at": action.get("expires_at"),
+                "decided_by": approval.get("decided_by"),
+            }
+            if approval
+            else None,
+            "execution": v.get("execution"),
+            "next": list(snap.next),
         }

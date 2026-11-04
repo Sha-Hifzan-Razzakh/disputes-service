@@ -12,6 +12,8 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.bootstrap.container import build_container, close_container
 from app.bootstrap.settings import get_settings
 from app.orchestration.assist import build_assist_graph
+from app.orchestration.evidence import build_evidence_graph
+from app.orchestration.resolution import build_resolution_graph
 
 log = structlog.get_logger()
 
@@ -24,7 +26,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         saver = AsyncPostgresSaver(c.checkpoint_pool)  # type: ignore[arg-type]
         if settings.checkpoint_auto_setup:
             await saver.setup()  # dev/test only; staging and prod run it as a deploy step
-        c.assist_graph = build_assist_graph().compile(checkpointer=saver, name="assist")
+        evidence = build_evidence_graph().compile(name="evidence")  # inherits the parent's checkpointer per run
+        c.assist_graph = build_assist_graph(evidence).compile(checkpointer=saver, name="assist")
+        c.resolution_graph = build_resolution_graph(evidence).compile(checkpointer=saver, name="resolution")
         app.state.container = c
         log.info("startup", env=settings.env, model_provider=settings.model_provider)
         yield

@@ -33,7 +33,7 @@ async def test_nodes_read_tenant_from_context(
     r = await client.post(
         f"/v1/disputes/{did}/assist", json={"question": "ctx?"}, headers=auth() | {"X-Request-ID": "rid-ctx-1"}
     )
-    assert r.status_code == 200 and seen == ["northwind"]
+    assert r.status_code == 200 and seen and set(seen) == {"northwind"}  # one search per planned query
 
 
 async def test_run_timeout_returns_504_envelope(

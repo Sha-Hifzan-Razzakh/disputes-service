@@ -6,6 +6,9 @@ Uses APP_TEST_DATABASE_URL (default: local Postgres on localhost:5432).
 from __future__ import annotations
 
 import os
+
+# Checkpoints must deserialize without importing arbitrary classes (ADR-0002); read at import time by langgraph.
+os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 from collections.abc import AsyncIterator, Callable
 
 import httpx
