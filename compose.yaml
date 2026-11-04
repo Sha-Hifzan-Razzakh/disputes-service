@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: disputes
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+  app:
+    build: .
+    environment:
+      APP_DATABASE_URL: postgresql+psycopg://postgres:dev@db:5432/disputes
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
