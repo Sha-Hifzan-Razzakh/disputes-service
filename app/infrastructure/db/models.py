@@ -231,3 +231,25 @@ class AuditLogRow(Base):
     request_id: Mapped[str] = mapped_column(String(64))
     data: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
     dedupe_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+
+
+class ToolCallRow(Base):
+    """One row per tool-gateway attempt (allowed or denied). Arguments are stored as a hash, never in clear."""
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        Index("ix_tool_calls_tenant_at", "tenant_id", "at"),
+        CheckConstraint("status IN ('ok', 'error', 'retryable_error', 'denied')", name="ck_tool_calls_status"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    tool: Mapped[str] = mapped_column(String(80))
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    approval_id: Mapped[uuid.UUID | None] = mapped_column()
+    attempt: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    args_sha256: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
