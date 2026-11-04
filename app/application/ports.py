@@ -165,6 +165,23 @@ class ToolResult:
     error: str | None = None
 
 
+class TransientError(Exception):
+    """Raised by adapters for failures that are safe to retry (dropped connection, lock timeout, 5xx).
+    Graph nodes attach `RetryPolicy(retry_on=TransientError)`; nothing else is retried automatically."""
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadRecord:
+    thread_id: str
+    tenant_id: str
+    dispute_id: uuid.UUID
+    graph: str
+    status: str  # running | awaiting_approval | done | failed | resume_failed | cancelled
+    started_by: str
+    created_at: datetime
+    outcome: str | None = None
+
+
 class CaseReader(Protocol):
     async def snapshot(self, tenant_id: str, dispute_id: uuid.UUID) -> CaseSnapshot: ...
 
@@ -180,13 +197,26 @@ class ResolutionDrafter(Protocol):
 
 
 class ThreadRegistry(Protocol):
-    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, thread_id: str, started_by: str) -> None: ...
+    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str) -> str:
+        """Register a new thread and return its id; raises ResolutionInProgress if one is active."""
+        ...
+
+    async def get(self, tenant_id: str, thread_id: str) -> ThreadRecord: ...
     async def set_status(self, thread_id: str, status: str, *, outcome: str | None = None) -> None: ...
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
 
 
+class DisputeCommands(Protocol):
+    async def advance(self, *, tenant_id: str, dispute_id: uuid.UUID, goal: str, actor: str, note: str) -> str:
+        """Move the dispute to `goal` along the allowed transitions; a no-op when already there. Returns status."""
+        ...
+
+
 class ApprovalRepository(Protocol):
-    async def create(self, record: ApprovalRecord) -> None: ...
+    async def create(self, record: ApprovalRecord) -> ApprovalRecord:
+        """Insert if absent (id is derived from the thread), return the stored row either way."""
+        ...
+
     async def get(self, tenant_id: str, approval_id: uuid.UUID) -> ApprovalRecord: ...
     async def decide(
         self, *, tenant_id: str, approval_id: uuid.UUID, status: str, actor: str, note: str | None, now: datetime
@@ -210,12 +240,20 @@ class SideEffectLedger(Protocol):
 
 class AuditLog(Protocol):
     async def record(
-        self, *, tenant_id: str, actor: str, action: str, subject: str, request_id: str, data: dict[str, object]
+        self,
+        *,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        subject: str,
+        request_id: str,
+        data: dict[str, object],
+        dedupe_key: str | None = None,
     ) -> None: ...
 
 
 class Outbox(Protocol):
-    async def enqueue(self, *, tenant_id: str, type: str, payload: dict[str, object]) -> None: ...
+    async def enqueue(self, *, tenant_id: str, type: str, payload: dict[str, object], dedupe_key: str) -> None: ...
 
 
 class ToolGateway(Protocol):

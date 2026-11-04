@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.ports import PolicyHit
 from app.infrastructure.db.models import PolicyChunkRow, PolicyDocumentRow
+from app.infrastructure.db.session import transaction
 
 _TOKEN = re.compile(r"[a-z0-9]+(?:\.[0-9]+)?")
 _STOP = frozenset(
@@ -93,7 +94,7 @@ class SqlPolicyStore:
 
     async def search(self, *, tenant_id: str, query: str, k: int) -> list[PolicyHit]:
         qv = self.embedder.embed(query)
-        async with self.sessions() as s:
+        async with transaction(self.sessions) as s:
             rows = (
                 await s.execute(
                     select(PolicyChunkRow, PolicyDocumentRow.title)

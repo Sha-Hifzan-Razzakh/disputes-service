@@ -6,12 +6,16 @@ AnthropicDrafter wraps a chat model (Claude via langchain-anthropic) when APP_MO
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field
 
-from app.application.ports import PolicyHit, Recommendation
+from app.application.ports import DraftResolution, PolicyHit, Recommendation
+from app.domain.money import Money
+from app.domain.reason_codes import ReasonFamily, Resolution, lookup
+from app.domain.rules import partial_amount
 
 
 class RuleBasedDrafter:
@@ -67,3 +71,94 @@ class AnthropicDrafter:  # pragma: no cover - requires an API key
         return Recommendation(
             text=out.recommendation, suggested_resolution=out.suggested_resolution, citations=out.cited_chunk_ids
         )
+
+
+# --- resolution drafting (v2) ----------------------------------------------------------------------------------
+
+
+class RuleBasedResolutionDrafter:
+    """Deterministic drafter that encodes the spec's 'expected resolution by family' table (docs/spec.md §4).
+
+    `feedback` holds verification violations from the previous attempt; the drafter repairs what it can (R1 amount,
+    R6 citations) and leaves the rest for verify to reject again. Analyst instructions never change the decision.
+    """
+
+    async def draft(
+        self, *, case: dict[str, Any], evidence: list[dict[str, Any]], feedback: list[str], instructions: str
+    ) -> DraftResolution:
+        d, txn = case["dispute"], case["transaction"]
+        family = ReasonFamily(case["reason_family"])
+        merchant = {e["kind"] for e in case.get("evidence", [])}
+        disputed = Money.of(d["amount"], d["currency"])
+        refunded = Decimal(str(txn["refunded"]))
+        by_kind = {e["kind"]: e["id"] for e in evidence}
+        network = [e["id"] for e in evidence if e["source"] == "policy" and e["scope"] == "network"]
+        tenant = [e["id"] for e in evidence if e["source"] == "policy" and e["scope"] == "tenant"]
+
+        res, why, cite = self._decide(family, txn, merchant, refunded, disputed, by_kind)
+        amount: Money | None = None
+        if res is Resolution.ACCEPT:
+            amount = disputed
+        elif res is Resolution.PARTIAL:
+            amount = partial_amount(disputed, int(case.get("partial_pct", 50)))
+        if res is not Resolution.REQUEST_INFO:
+            cite = [*cite, *network[:1], *(tenant[:1] if family is ReasonFamily.NOT_AS_DESCRIBED else [])]
+        if any(f.startswith("R6") for f in feedback):
+            cite = [c for c in cite if c in {e["id"] for e in evidence}] or network[:1]
+        if res is Resolution.REQUEST_INFO:
+            missing = sorted(set(lookup(d["network"], d["reason_code"]).required_evidence) - merchant)
+            why = f"{why}; please upload: {', '.join(missing) or 'any supporting documents'}"
+        text = f"Recommend {res.value}{f' of {amount}' if amount else ''}: {why}."
+        return DraftResolution(
+            resolution=res.value, amount=amount, rationale=text, citations=tuple(dict.fromkeys(cite))
+        )
+
+    @staticmethod
+    def _decide(
+        family: ReasonFamily,
+        txn: dict[str, Any],
+        merchant: set[str],
+        refunded: Decimal,
+        disputed: Money,
+        by_kind: dict[str, str],
+    ) -> tuple[Resolution, str, list[str]]:
+        if family is ReasonFamily.FRAUD:
+            if txn["three_ds_authenticated"]:
+                return (
+                    Resolution.CONTEST,
+                    "3-D Secure authentication shifts fraud liability",
+                    [by_kind["three_ds_result"]],
+                )
+            if txn["avs_result"] == "Y" and txn["cvv_result"] == "M":
+                extra = [by_kind[k] for k in ("customer_comms", "transaction_records") if k in by_kind]
+                if extra:
+                    return (
+                        Resolution.CONTEST,
+                        "AVS and CVV match and the merchant holds prior-history evidence",
+                        [by_kind["avs_cvv_result"], *extra],
+                    )
+                return Resolution.REQUEST_INFO, "AVS and CVV match but there is no 3-D Secure or history evidence", []
+            return Resolution.ACCEPT, "no strong authentication evidence on the transaction", []
+        if family is ReasonFamily.NOT_RECEIVED:
+            if txn["delivery_status"] == "DELIVERED" and txn["delivery_tracking"]:
+                return Resolution.CONTEST, "carrier tracking shows the order delivered", [by_kind["delivery_proof"]]
+            if txn["delivery_status"] == "DELIVERED":
+                return Resolution.REQUEST_INFO, "delivered without a tracking record", []
+            return Resolution.ACCEPT, "no proof of delivery", []
+        if family is ReasonFamily.NOT_AS_DESCRIBED:
+            if {"product_description", "customer_comms"} <= merchant:
+                return (
+                    Resolution.CONTEST,
+                    "product description and customer communications are on file",
+                    [by_kind["product_description"], by_kind["customer_comms"]],
+                )
+            if "product_description" in merchant:
+                return (
+                    Resolution.PARTIAL,
+                    "product description is on file but no customer communications",
+                    [by_kind["product_description"]],
+                )
+            return Resolution.REQUEST_INFO, "no product description or customer communications on file", []
+        if refunded >= disputed.amount:
+            return Resolution.CONTEST, "a refund was already issued for this amount", [by_kind["refund_record"]]
+        return Resolution.ACCEPT, "processing errors are refunded", []
