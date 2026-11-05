@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.11.32 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
 # build: resolve the locked runtime dependencies into /app/.venv
 FROM python:3.12-slim AS build
