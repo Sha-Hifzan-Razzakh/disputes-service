@@ -1,0 +1,6 @@
+# Staging = a kind cluster on the CI runner (deploy.yml). Same image digest that prod gets.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: disputes-staging
+resources: [../../base]
+components: [env]

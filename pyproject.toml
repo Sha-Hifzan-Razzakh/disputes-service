@@ -59,10 +59,11 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra -p no:cacheprovider -m 'not chaos and not eval'"
+addopts = "-ra -p no:cacheprovider -m 'not chaos and not eval and not smoke'"
 markers = [
     "chaos: failure-injection suite (nightly workflow; run with -m chaos)",
     "eval: golden-set evaluation (run with -m eval or evals/run.py)",
+    "smoke: post-deploy checks against SMOKE_BASE_URL (deploy workflow; run with -m smoke)",
 ]
 filterwarnings = ["ignore::jwt.warnings.InsecureKeyLengthWarning"]
 

@@ -1,0 +1,83 @@
+# Staging only: Postgres in the cluster (prod uses RDS, infra/terraform). Credentials come from the
+# `postgres-secrets` Secret the pipeline generates; nothing here is a real secret.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  annotations:
+    checkov.io/skip1: CKV_K8S_22=Postgres writes its socket and lock files outside the data volume (staging only)
+    checkov.io/skip2: CKV_K8S_43=staging database image by tag; prod uses RDS
+    checkov.io/skip3: CKV_K8S_40=the postgres image owns its files as uid 999
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: postgres}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: postgres}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:                    # postgres user throughout; fsGroup lets it read the TLS key (root:999, 0640)
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: Always
+          # TLS on, as in prod: the app refuses a staging/prod DATABASE_URL without sslmode=require
+          args: ["-c", "ssl=on", "-c", "ssl_cert_file=/tls/tls.crt", "-c", "ssl_key_file=/tls/tls.key"]
+          ports: [{name: pg, containerPort: 5432}]
+          env:
+            - name: POSTGRES_DB
+              value: disputes
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: postgres-secrets, key: password}}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "postgres"]}
+            periodSeconds: 3
+          livenessProbe:
+            exec: {command: ["pg_isready", "-U", "postgres"]}
+            periodSeconds: 10
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: postgres-tls, defaultMode: 0640}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 2Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app.kubernetes.io/name: postgres}
+  ports: [{name: pg, port: 5432, targetPort: pg}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {egress/postgres: "true"}}}]
+      ports: [{protocol: TCP, port: 5432}]

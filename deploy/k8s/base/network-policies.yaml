@@ -1,0 +1,75 @@
+# Default deny in both directions, then only the paths the design needs (T24.8). Egress to the internet is
+# not allowed at all here; prod adds HTTPS to the model provider only when APP_MODEL_PROVIDER=anthropic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: api}}
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-from-api-only
+spec:
+  podSelector: {matchLabels: {role/mcp: "true"}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: api}}}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-to-mcp
+spec:
+  podSelector: {matchLabels: {egress/mcp: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {role/mcp: "true"}}}]
+      ports: [{protocol: TCP, port: 8101}, {protocol: TCP, port: 8102}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-to-postgres
+spec:
+  podSelector: {matchLabels: {egress/postgres: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}}]
+      ports: [{protocol: TCP, port: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-to-api
+spec:
+  podSelector: {matchLabels: {egress/api: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: api}}}]
+      ports: [{protocol: TCP, port: 8000}]

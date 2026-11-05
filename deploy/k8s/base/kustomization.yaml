@@ -1,0 +1,17 @@
+# Workloads shared by every Kubernetes environment. Secrets are never in the repo: the deploy pipeline creates
+# `app-secrets` (APP_DATABASE_URL, APP_JWT_SECRET, APP_MCP_*_TOKEN) and `mcp-secrets` before applying this.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs: {app.kubernetes.io/part-of: disputes-service}
+    includeSelectors: false
+resources:
+  - ../config
+  - api.yaml
+  - mcp.yaml
+  - cronjobs.yaml
+  - network-policies.yaml
+images:
+  - name: disputes-service
+    newName: disputes-service
+    newTag: local
