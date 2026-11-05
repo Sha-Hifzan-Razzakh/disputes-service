@@ -76,7 +76,7 @@ jobs:
       - run: |
           uv export --frozen --no-dev -q -o requirements.txt
           uvx pip-audit==2.9.0 -r requirements.txt --disable-pip
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
