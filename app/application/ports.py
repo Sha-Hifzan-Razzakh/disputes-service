@@ -181,6 +181,7 @@ class ThreadRecord:
     started_by: str
     created_at: datetime
     outcome: str | None = None
+    graph_version: str | None = None  # release + state schema that started the thread (T26.2)
 
 
 class CaseReader(Protocol):
@@ -198,7 +199,9 @@ class ResolutionDrafter(Protocol):
 
 
 class ThreadRegistry(Protocol):
-    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str) -> str:
+    async def start(
+        self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str, graph_version: str = "unknown"
+    ) -> str:
         """Register a new thread and return its id; raises ResolutionInProgress if one is active."""
         ...
 

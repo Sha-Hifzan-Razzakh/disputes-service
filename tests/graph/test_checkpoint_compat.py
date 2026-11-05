@@ -63,3 +63,30 @@ def test_paused_resolution_fixture_keys_are_still_understood(fixture: Path) -> N
     assert keys <= set(typing.get_type_hints(S.ResolutionState)), keys - set(typing.get_type_hints(S.ResolutionState))
     assert doc["values"]["schema_version"] <= S.SCHEMA_VERSION["resolution"]
     assert doc["values"]["approval"]["status"] == "pending"
+
+
+# Identity-bearing keys point at rows of the run that wrote the fixture (dispute, approval, side-effect key), so a
+# release fixture is replayed onto a live paused run: those keys come from the live run, every other key from the
+# old release. What is under test is that state written by that release still resumes through approval, execution
+# and the terminal nodes of the current code.
+LIVE_KEYS = {"dispute_id", "requested_by", "case", "evidence", "draft", "action", "approval"}
+RELEASES = sorted(Path("tests/fixtures/checkpoints").glob("release_*_resolution_awaiting.json"))
+
+
+@pytest.mark.parametrize("fixture", RELEASES, ids=[f.stem for f in RELEASES])
+async def test_paused_resolution_from_each_release_resumes_to_completion(
+    fixture: Path, client: httpx.AsyncClient, auth: Auth, app: Any, tools: Any
+) -> None:
+    from tests.graph.test_resolution_graph import ctx, decision, dispute, start
+
+    doc = json.loads(fixture.read_text())  # noqa: ASYNC240 - small test fixture
+    did = await dispute(client, auth, "NW-1001", "10.4", "189.00")
+    live = (await start(client, auth, did)).json()
+    graph = app.state.container.resolution_graph
+    cfg = {"configurable": {"thread_id": live["thread_id"]}}
+    current = (await graph.aget_state(cfg)).values
+    old = {k: v for k, v in doc["values"].items() if not k.startswith(("branch:", "__")) and k not in LIVE_KEYS}
+    await graph.aupdate_state(cfg, old | {k: current[k] for k in LIVE_KEYS if k in current}, as_node="request_approval")
+    assert (await graph.aget_state(cfg)).next == ("approve",)
+    out = await app.state.container.resolution_runner().resume(live["thread_id"], decision(live, "approved"), ctx(app))
+    assert out["outcome"] == "REPRESENTED" and len(tools.calls) == 1, (doc["app_version"], out)

@@ -77,7 +77,15 @@ class SqlTenantPolicyRepository:
 
 def _thread(r: ThreadRow) -> ThreadRecord:
     return ThreadRecord(
-        r.thread_id, r.tenant_id, r.dispute_id, r.graph, r.status, r.started_by, r.created_at, r.outcome
+        r.thread_id,
+        r.tenant_id,
+        r.dispute_id,
+        r.graph,
+        r.status,
+        r.started_by,
+        r.created_at,
+        r.outcome,
+        r.graph_version,
     )
 
 
@@ -87,7 +95,9 @@ class SqlThreadRegistry:
     def __init__(self, sessions: Sessions) -> None:
         self.sessions = sessions
 
-    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str) -> str:
+    async def start(
+        self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str, graph_version: str = "unknown"
+    ) -> str:
         try:
             async with transaction(self.sessions) as s:
                 n = await s.scalar(
@@ -104,6 +114,7 @@ class SqlThreadRegistry:
                         graph=graph,
                         status="running",
                         started_by=started_by,
+                        graph_version=graph_version,
                     )
                 )
             return thread_id

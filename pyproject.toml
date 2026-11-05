@@ -1,6 +1,6 @@
 [project]
 name = "disputes-service"
-version = "2.0.0"
+version = "2.1.0"
 description = "Multi-tenant card-payment dispute (chargeback) service with a LangGraph dispute assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -60,12 +60,19 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra -p no:cacheprovider -m 'not chaos and not eval and not smoke'"
+# T26.4: a deprecation in our code or a dependency fails the suite, so upgrades surface them before removal.
+# Add a narrowly scoped "ignore:<message>:DeprecationWarning:<module>" here only with a linked issue.
+filterwarnings = [
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
+    "error::FutureWarning",
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",  # short HS256 keys in tests only; settings refuse dev keys in prod
+]
 markers = [
     "chaos: failure-injection suite (nightly workflow; run with -m chaos)",
     "eval: golden-set evaluation (run with -m eval or evals/run.py)",
     "smoke: post-deploy checks against SMOKE_BASE_URL (deploy workflow; run with -m smoke)",
 ]
-filterwarnings = ["ignore::jwt.warnings.InsecureKeyLengthWarning"]
 
 [tool.coverage.run]
 source = ["app"]
