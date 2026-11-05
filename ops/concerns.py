@@ -241,9 +241,12 @@ CONCERNS: list[Concern] = [
     Concern(
         "C23",
         "a release never becomes ready?",
-        "rolling update keeps old pods; progress deadline aborts; automatic undo (ECS: circuit breaker)",
-        "scripts/deploy_k8s.sh, infra/terraform/ecs.tf",
+        "rolling update keeps old pods; progress deadline aborts; every Deployment the release changed is undone, "
+        "config included (content-hashed ConfigMap); ECS: circuit breaker, and the deploy fails unless each service "
+        "runs the task definition just applied",
+        "scripts/deploy_k8s.sh, scripts/deploy_ecs.sh, infra/terraform/ecs.tf",
         ("ci:deploy/staging",),
+        incidents=("PR #14 review: only the first failed Deployment was undone; an ECS rollback reported success",),
     ),
     Concern(
         "C24",
@@ -291,15 +294,44 @@ CONCERNS: list[Concern] = [
         "C29",
         "model spend spikes for one tenant?",
         "tokens and cost per tenant; ModelCostSpike alert; daily report",
-        "drafting.record_usage, scripts/cost_report.py",
+        "UsageMeter callback on every chat model, scripts/cost_report.py",
         ("tests.api.test_observability::test_model_spend_and_thread_status_are_exported",),
+        incidents=("PR #14 review: assist model calls were not metered",),
     ),
     Concern(
         "C30",
         "an alert fires and the on-call does not know what to do?",
-        "every alert has runbook_url to an existing runbook section; routing by severity",
+        "every alert has runbook_url to an existing runbook section; routing by severity; inhibition scoped to SLOs",
         "ops/alerts, ops/alertmanager, docs/runbook.md",
-        ("tests.unit.test_ops_config::test_every_alert_routes_and_links_to_an_existing_runbook_section",),
+        (
+            "tests.unit.test_ops_config::test_every_alert_routes_and_links_to_an_existing_runbook_section",
+            "tests.unit.test_ops_config::test_alertmanager_routes_every_severity",
+        ),
+        incidents=("PR #14 review: an unscoped inhibit rule let any page silence unrelated tickets",),
+    ),
+    Concern(
+        "C32",
+        "an alert's query matches no series, so it can never fire?",
+        "SLO queries are checked against what /metrics really exports; synthetic alert keyed on last success",
+        "ops/slo/slos.py, tests/api/test_observability.py",
+        ("tests.api.test_observability::test_slo_queries_use_labels_the_app_exports",),
+        incidents=("PR #14 review: SLOs filtered on http_route, which is never exported (http_target is)",),
+    ),
+    Concern(
+        "C33",
+        "someone on the internet asks the public load balancer for /metrics?",
+        "listener rule returns 404 for /metrics; Prometheus scrapes inside the VPC",
+        "infra/terraform/alb.tf",
+        ("tests.unit.test_ops_config::test_public_listener_never_serves_metrics",),
+        incidents=("PR #14 review: per-tenant spend was reachable without auth",),
+    ),
+    Concern(
+        "C34",
+        "the deploy workflow is started by hand on a feature branch?",
+        "the prod job runs only for refs/heads/main and only after staging passed for the same digest",
+        ".github/workflows/deploy.yml",
+        ("ci:deploy/prod",),
+        incidents=("PR #14 review: workflow_dispatch from any ref could promote a branch",),
     ),
     Concern(
         "C31",

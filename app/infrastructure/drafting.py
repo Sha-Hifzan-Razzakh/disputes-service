@@ -12,7 +12,9 @@ from decimal import Decimal
 from typing import Any, Literal
 
 import structlog
+from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.language_models import BaseChatModel
+from langchain_core.outputs import LLMResult
 from opentelemetry import metrics
 from pydantic import BaseModel, Field, ValidationError
 
@@ -248,6 +250,27 @@ def record_usage(
     _tokens.add(output_tokens, {"tenant": tenant, "model": model, "direction": "out"})
     _cost.add(cost, {"tenant": tenant, "model": model})
     return cost
+
+
+class UsageMeter(AsyncCallbackHandler):
+    """Attached to every chat model the container builds (assist and resolution), so all model spend is metered
+    per tenant without each adapter remembering to do it (review of PR #14: assist calls were missing)."""
+
+    def __init__(self, *, model: str, usd_per_mtok_in: float, usd_per_mtok_out: float) -> None:
+        self.model, self.usd_in, self.usd_out = model, usd_per_mtok_in, usd_per_mtok_out
+
+    async def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        for generations in response.generations:
+            for g in generations:
+                usage = getattr(getattr(g, "message", None), "usage_metadata", None) or {}
+                if usage:
+                    record_usage(
+                        model=self.model,
+                        input_tokens=int(usage.get("input_tokens", 0)),
+                        output_tokens=int(usage.get("output_tokens", 0)),
+                        usd_per_mtok_in=self.usd_in,
+                        usd_per_mtok_out=self.usd_out,
+                    )
 
 
 _FENCE = re.compile(r"<\s*/?\s*analyst_note\s*>", re.IGNORECASE)

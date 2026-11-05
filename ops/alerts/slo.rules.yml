@@ -3,37 +3,37 @@ groups:
 - name: slo-api_availability
   rules:
   - record: slo:api_availability:error_ratio_5m
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[5m]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[5m])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[5m]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[5m])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_30m
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[30m]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[30m])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[30m]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[30m])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_1h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[1h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[1h])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[1h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[1h])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_2h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[2h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[2h])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[2h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[2h])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_6h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[6h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[6h])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[6h]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[6h])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_1d
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[1d]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[1d])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[1d]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[1d])),
       1e-9)
     labels:
       slo: api_availability
   - record: slo:api_availability:error_ratio_3d
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*",http_status_code=~"5.."}[3d]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~"/v2/.*"}[3d])),
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*",http_status_code=~"5.."}[3d]))) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~"/v2/.*"}[3d])),
       1e-9)
     labels:
       slo: api_availability
@@ -72,38 +72,38 @@ groups:
 - name: slo-start_latency
   rules:
   - record: slo:start_latency:error_ratio_5m
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[5m])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[5m])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[5m])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[5m])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[5m])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[5m])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_30m
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[30m])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[30m])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[30m])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[30m])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[30m])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[30m])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_1h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1h])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[1h])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1h])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1h])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[1h])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1h])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_2h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[2h])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[2h])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[2h])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[2h])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[2h])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[2h])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_6h
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[6h])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[6h])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[6h])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[6h])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[6h])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[6h])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_1d
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1d])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[1d])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1d])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1d])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[1d])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[1d])), 1e-9)
     labels:
       slo: start_latency
   - record: slo:start_latency:error_ratio_3d
-    expr: (sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[3d])) - sum(rate(http_server_duration_milliseconds_bucket{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[3d])))
-      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[3d])), 1e-9)
+    expr: (sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[3d])) - sum(rate(http_server_duration_milliseconds_bucket{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST",le="2500"}[3d])))
+      / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target="/v2/disputes/{dispute_id}/resolutions",http_method="POST"}[3d])), 1e-9)
     labels:
       slo: start_latency
   - alert: SloBurn_start_latency_1h

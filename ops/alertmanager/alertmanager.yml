@@ -21,7 +21,7 @@ route:
 
 inhibit_rules:
   # a page already covers the same SLO's slower ticket alerts
-  - source_matchers: [severity="page"]
+  - source_matchers: [severity="page", slo=~".+"]   # only SLO pages; a missing label would match everything
     target_matchers: [severity="ticket"]
     equal: [slo]
 

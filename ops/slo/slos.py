@@ -29,15 +29,15 @@ class Slo:
     anchor: str  # runbook section
 
 
-START = 'http_route="/v2/disputes/{{dispute_id}}/resolutions",http_method="POST"'
+START = 'http_target="/v2/disputes/{{dispute_id}}/resolutions",http_method="POST"'
 
 SLOS = [
     Slo(
         "api_availability",
         0.995,
         "/v2 requests answered without a 5xx",
-        'sum(rate(http_server_duration_milliseconds_count{{http_route=~"/v2/.*",http_status_code=~"5.."}}[{w}]))',
-        'sum(rate(http_server_duration_milliseconds_count{{http_route=~"/v2/.*"}}[{w}]))',
+        'sum(rate(http_server_duration_milliseconds_count{{http_target=~"/v2/.*",http_status_code=~"5.."}}[{w}]))',
+        'sum(rate(http_server_duration_milliseconds_count{{http_target=~"/v2/.*"}}[{w}]))',
         "slo-api-availability",
     ),
     Slo(

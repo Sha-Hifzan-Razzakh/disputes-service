@@ -13,9 +13,12 @@ Every merge to `main` runs `.github/workflows/deploy.yml`:
 2. **staging** (kind cluster on the runner) — `scripts/deploy_k8s.sh`: migrate Job (waited for) → workloads →
    `rollout status`; smoke across two replicas; egress check; the two rollback rehearsals below. Timings are in
    the job summary.
-3. **prod** — only when `vars.AWS_DEPLOY_ROLE_ARN` is set, after the `production` environment's reviewers approve:
+3. **prod** — only from `main`, only when `vars.AWS_DEPLOY_ROLE_ARN` and `vars.CERTIFICATE_ARN` are set, after the
+   `production` environment's reviewers approve (configure them in GitHub → Settings → Environments):
    `scripts/deploy_ecs.sh prod <digest>`: copy the same digest to ECR → migrate task (exit 0 required) →
-   services (circuit breaker on) → wait stable → synthetic check through the load balancer.
+   services (circuit breaker on) → each service must run the task definition just applied (a circuit-breaker
+   rollback fails the job) → synthetic check through the load balancer. The first deploy creates the ECR
+   repository before copying the image.
 
 To deploy by hand (same path): `scripts/deploy_k8s.sh deploy/k8s/overlays/staging disputes-service:<sha>` or
 `scripts/deploy_ecs.sh prod ghcr.io/sha-hifzan-razzakh/disputes-service@sha256:<digest>`.
@@ -112,7 +115,7 @@ the cause, Tool calls failing.
 
 ## Synthetic check failing
 
-`SyntheticCheckFailing`: the in-cluster CronJob `synthetic` (`scripts/synthetic.py`) failed for 10 minutes.
+`SyntheticCheckFailing`: the in-cluster CronJob `synthetic` (`scripts/synthetic.py`) has had no successful run for 15 minutes.
 `kubectl -n $NS logs job/<latest synthetic job>` shows which check failed (healthz, readyz or an authenticated
 read) and how long it took. Readiness failing → database or checkpointer; authenticated read failing → JWT secret.
 

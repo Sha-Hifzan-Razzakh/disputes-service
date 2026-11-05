@@ -48,6 +48,14 @@ def test_alertmanager_routes_every_severity() -> None:
     receivers = {r["name"] for r in am["receivers"]}
     assert {r["receiver"] for r in am["route"]["routes"]} <= receivers
     assert "runbook_url" in yaml.safe_dump(am["receivers"])
+    for rule in am["inhibit_rules"]:  # a label missing on both sides counts as equal: scope the source
+        assert all(any(m.startswith(f"{lbl}=~") for m in rule["source_matchers"]) for lbl in rule["equal"])
+
+
+def test_public_listener_never_serves_metrics() -> None:
+    alb = (ROOT / "infra/terraform/alb.tf").read_text()
+    rule = alb[alb.index('resource "aws_lb_listener_rule" "block_metrics"') :]
+    assert '"/metrics"' in rule[:600] and "fixed-response" in rule[:600] and "priority     = 1" in rule[:600]
 
 
 def test_slo_rules_are_generated_from_the_single_source() -> None:
@@ -103,7 +111,7 @@ def test_cost_report_sums_per_tenant_and_day() -> None:
         )
 
     table = mod.report("http://prom", 1, httpx.Client(transport=httpx.MockTransport(handler)))
-    assert "| northwind | 1.25 | 1000 | 200 |" in table
+    assert "| 2026-11-04 | northwind | 1.25 | 1000 | 200 |" in table  # the value at midnight Nov 5 is Nov 4
 
 
 def test_node_usage_lists_nodes_that_never_ran() -> None:

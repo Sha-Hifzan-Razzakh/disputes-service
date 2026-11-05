@@ -61,7 +61,7 @@ groups:
 - name: disputes-operations
   rules:
   - alert: SyntheticCheckFailing
-    expr: sum(kube_job_status_failed{job_name=~"synthetic-.*"} > 0) > 0
+    expr: time() - max(kube_cronjob_status_last_successful_time{cronjob="synthetic"}) > 900
     for: 10m
     labels:
       severity: page

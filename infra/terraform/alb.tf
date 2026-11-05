@@ -12,6 +12,26 @@ resource "aws_lb" "api" {
   }
 }
 
+# /metrics carries per-tenant series (model spend, tool use): never through the public listener. Prometheus
+# scrapes the tasks inside the VPC (review of PR #14).
+resource "aws_lb_listener_rule" "block_metrics" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 1
+  condition {
+    path_pattern {
+      values = ["/metrics", "/metrics/*"]
+    }
+  }
+  action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "not found"
+      status_code  = "404"
+    }
+  }
+}
+
 resource "aws_wafv2_web_acl" "api" {
   name  = "disputes-${var.env}"
   scope = "REGIONAL"
@@ -84,8 +104,6 @@ resource "aws_wafv2_web_acl_association" "api" {
   web_acl_arn  = aws_wafv2_web_acl.api.arn
 }
 
-data "aws_elb_service_account" "main" {}
-
 resource "aws_s3_bucket" "alb_logs" {
   #checkov:skip=CKV_AWS_144:access logs are not replicated cross-region
   #checkov:skip=CKV_AWS_145:ALB access logs only support SSE-S3
@@ -141,8 +159,9 @@ data "aws_iam_policy_document" "alb_logs" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.alb_logs.arn}/AWSLogs/*"]
     principals {
-      type        = "AWS"
-      identifiers = [data.aws_elb_service_account.main.arn]
+      # log-delivery service principal: required in regions launched after Aug 2022 (me-central-1)
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
     }
   }
 }

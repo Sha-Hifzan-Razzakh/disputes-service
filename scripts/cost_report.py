@@ -38,7 +38,8 @@ def report(prom: str, days: int, client: httpx.Client | None = None) -> str:
         r.raise_for_status()
         for series in r.json()["data"]["result"]:
             for ts, value in series["values"]:
-                day = datetime.fromtimestamp(float(ts), UTC).date().isoformat()
+                # increase(...[1d]) evaluated at midnight of D covers day D-1
+                day = (datetime.fromtimestamp(float(ts), UTC) - timedelta(days=1)).date().isoformat()
                 rows[(day, series["metric"].get("tenant", "unknown"))][name] = float(value)
     out = ["| day | tenant | cost (USD) | tokens in | tokens out |", "|---|---|---|---|---|"]
     for (day, tenant), v in sorted(rows.items()):
