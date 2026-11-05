@@ -1,0 +1,66 @@
+name: monthly
+# Monthly refresh (T26.6): evals against the baseline, dependency audit, what an upgrade would change, and the
+# generated docs still in sync. The report is filed as an issue "Monthly refresh YYYY-MM" (one per month).
+on:
+  schedule:
+    - cron: "41 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - name: evals vs baseline
+        id: evals
+        continue-on-error: true
+        run: uv run python -m evals.run | tee evals.txt
+        env:
+          APP_TEST_DSN: postgresql://postgres@localhost:5432
+      - name: dependency audit
+        id: audit
+        continue-on-error: true
+        run: |
+          uv export --frozen --no-dev -q -o requirements.txt
+          uvx pip-audit==2.9.0 -r requirements.txt --disable-pip 2>&1 | tee audit.txt
+      - name: available upgrades
+        run: |
+          cp uv.lock uv.lock.before
+          uv lock --upgrade -q
+          diff <(grep -A1 '^name = ' uv.lock.before | paste - - -d' ') <(grep -A1 '^name = ' uv.lock | paste - - -d' ') \
+            | grep '^>' | sed 's/^> name = //' > upgrades.txt || true
+      - name: generated docs in sync
+        id: docs
+        continue-on-error: true
+        run: uv run python ops/slo/slos.py --check && uv run python ops/concerns.py --check
+      - name: file the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          month=$(date -u +%Y-%m)
+          {
+            echo "Automated monthly refresh (docs/maintenance.md)."
+            echo; echo "| check | result |"; echo "|---|---|"
+            echo "| evals vs baseline | ${{ steps.evals.outcome }} |"
+            echo "| pip-audit | ${{ steps.audit.outcome }} |"
+            echo "| generated docs | ${{ steps.docs.outcome }} |"
+            echo; echo "### Available upgrades ($(wc -l < upgrades.txt))"; echo '```'; head -60 upgrades.txt; echo '```'
+            echo; echo "### Evals"; echo '```'; tail -40 evals.txt; echo '```'
+            echo; echo "### Audit"; echo '```'; tail -20 audit.txt; echo '```'
+            echo; echo "Next: read the changelogs of the upgrades you take (docs/maintenance.md, \"Upgrades\")."
+          } > report.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Monthly refresh $month" --body-file report.md

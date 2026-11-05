@@ -104,3 +104,24 @@ def test_cost_report_sums_per_tenant_and_day() -> None:
 
     table = mod.report("http://prom", 1, httpx.Client(transport=httpx.MockTransport(handler)))
     assert "| northwind | 1.25 | 1000 | 200 |" in table
+
+
+def test_node_usage_lists_nodes_that_never_ran() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("node_usage", ROOT / "scripts/node_usage.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    nodes = mod.compiled_nodes()
+    ran = [
+        {"metric": {"graph": "resolution", "node": n}, "value": [0, "3"]}
+        for n in nodes["resolution"] - {"record_expiry"}
+    ]
+    ran += [{"metric": {"graph": "evidence", "node": n}, "value": [0, "9"]} for n in nodes["evidence"]]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"result": ran}})
+
+    out = mod.unused("http://prom", 90, httpx.Client(transport=httpx.MockTransport(handler)))
+    assert out == {"resolution": ["record_expiry"], "evidence": []}
