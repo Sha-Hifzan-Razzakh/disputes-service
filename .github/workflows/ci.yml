@@ -94,12 +94,14 @@ jobs:
           tags: disputes-service:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # v0.33.1
+      # Grype, not Trivy: trivy-action's installer could not download the Trivy binary on the runners (2026-11-04)
+      - uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
         with:
-          image-ref: disputes-service:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+          image: disputes-service:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
       - run: docker compose up -d --build
       - name: readiness
         run: |
