@@ -26,6 +26,7 @@ from app.infrastructure.drafting import (
     LlmResolutionDrafter,
     RuleBasedDrafter,
     RuleBasedResolutionDrafter,
+    record_usage,
 )
 from app.infrastructure.repositories import SqlDisputeRepository, SqlEvidenceRepository, SqlLedger
 from app.infrastructure.retrieval import HashingEmbedder, SqlPolicyStore
@@ -133,6 +134,14 @@ def build_resolution_drafter(s: Settings) -> ResolutionDrafter:
 
     async def complete(prompt: str) -> str:
         msg = await llm.ainvoke(prompt)
+        usage = getattr(msg, "usage_metadata", None) or {}
+        record_usage(
+            model=s.model_name,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            usd_per_mtok_in=s.model_usd_per_mtok_in,
+            usd_per_mtok_out=s.model_usd_per_mtok_out,
+        )
         return msg.content if isinstance(msg.content, str) else "".join(str(p) for p in msg.content)
 
     return LlmResolutionDrafter(complete)

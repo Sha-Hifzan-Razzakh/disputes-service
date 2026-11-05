@@ -11,7 +11,9 @@ from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any, Literal
 
+import structlog
 from langchain_core.language_models import BaseChatModel
+from opentelemetry import metrics
 from pydantic import BaseModel, Field, ValidationError
 
 from app.application.ports import DraftResolution, PolicyHit, Recommendation, TransientError
@@ -228,6 +230,24 @@ def resolution_prompt(
         feedback=fb,
         instructions=_unfenceable((instructions or "(none)")[:1000]),
     )
+
+
+_meter = metrics.get_meter("disputes.model")
+_tokens = _meter.create_counter("model_tokens", description="Model tokens by tenant, model and direction (in/out)")
+_cost = _meter.create_counter("model_cost_usd", description="Estimated model spend in USD by tenant and model")
+
+
+def record_usage(
+    *, model: str, input_tokens: int, output_tokens: int, usd_per_mtok_in: float, usd_per_mtok_out: float
+) -> float:
+    """Per-tenant tokens and cost (T25.9). The tenant comes from the run's log context (bound by the runner), so the
+    model adapter needs no tenant parameter. Returns the estimated cost of this call."""
+    tenant = str(structlog.contextvars.get_contextvars().get("tenant_id", "unknown"))
+    cost = (input_tokens * usd_per_mtok_in + output_tokens * usd_per_mtok_out) / 1_000_000
+    _tokens.add(input_tokens, {"tenant": tenant, "model": model, "direction": "in"})
+    _tokens.add(output_tokens, {"tenant": tenant, "model": model, "direction": "out"})
+    _cost.add(cost, {"tenant": tenant, "model": model})
+    return cost
 
 
 _FENCE = re.compile(r"<\s*/?\s*analyst_note\s*>", re.IGNORECASE)

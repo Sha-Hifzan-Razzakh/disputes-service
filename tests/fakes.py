@@ -196,6 +196,13 @@ class MemThreads:
             None,
         )
 
+    async def counts(self, graph: str) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for r in self.rows.values():
+            if r.graph == graph:
+                out[r.status] = out.get(r.status, 0) + 1
+        return out
+
     @asynccontextmanager
     async def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AsyncIterator[None]:
         lock = self.locks.setdefault(thread_id, asyncio.Lock())

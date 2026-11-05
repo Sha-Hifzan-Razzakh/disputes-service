@@ -1,0 +1,9 @@
+# Online checks on production runs (T25.6): no labels exist in production, so these are label-free signals.
+# Every score is "higher is better"; a score under its minimum raises OnlineEvalDrift.
+min_runs: 20            # fewer finished runs in the window -> report only, no verdict
+checks:
+  grounded: 1.0                 # every draft cites only evidence gathered in its own run (R6)
+  verified_first_draft: 0.85    # drafts that pass verification without a refine
+  approval_acceptance: 0.80     # humans approve what the workflow proposes (rejections = draft quality)
+  execution_success: 0.99       # approved actions that executed
+  non_abstention: 0.65          # runs that reached a decision instead of escalating

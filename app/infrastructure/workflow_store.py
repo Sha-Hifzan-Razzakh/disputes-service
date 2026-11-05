@@ -142,6 +142,13 @@ class SqlThreadRegistry:
                 )
             )
 
+    async def counts(self, graph: str) -> dict[str, int]:
+        async with transaction(self.sessions) as s:
+            rows = await s.execute(
+                select(ThreadRow.status, func.count()).where(ThreadRow.graph == graph).group_by(ThreadRow.status)
+            )
+            return {status: n for status, n in rows.all()}
+
     @asynccontextmanager
     async def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AsyncIterator[None]:
         """Session-level Postgres advisory lock on a dedicated AUTOCOMMIT connection (never idle in a transaction,

@@ -210,6 +210,10 @@ class ThreadRegistry(Protocol):
         ...
 
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
+    async def counts(self, graph: str) -> dict[str, int]:
+        """Threads of one graph by status, across tenants (operations metric)."""
+        ...
+
     def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AbstractAsyncContextManager[None]:
         """Hold the thread for one invocation across all replicas, waiting up to `wait_s` for another holder;
         raises ThreadBusy after that."""

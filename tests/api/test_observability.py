@@ -110,3 +110,30 @@ def test_r15_exception_logs_carry_type_message_and_frames_but_no_locals(capsys) 
     exc = line["exception"][0]
     assert exc["exc_type"] == "ValueError" and exc["frames"] and "[PAN]" in exc["exc_value"]
     assert card not in json.dumps(line) and "secret_local" not in json.dumps(line)
+
+
+async def test_model_spend_and_thread_status_are_exported(client, app) -> None:
+    """T25.9 cost per tenant (tenant from the run's log context) and the ResolutionsStuck gauge."""
+    import structlog
+
+    from app.bootstrap.sweeper import Sweeper
+    from app.infrastructure.drafting import record_usage
+
+    structlog.contextvars.bind_contextvars(tenant_id="northwind")
+    try:
+        cost = record_usage(
+            model="claude-x", input_tokens=2000, output_tokens=500, usd_per_mtok_in=3.0, usd_per_mtok_out=15.0
+        )
+    finally:
+        structlog.contextvars.unbind_contextvars("tenant_id")
+    assert cost == pytest.approx(0.0135)
+    await Sweeper(app.state.container).run_once()
+    lines = (await client.get("/metrics")).text.splitlines()
+
+    def series(name: str, *labels: str) -> list[str]:
+        return [x for x in lines if x.startswith(name + "{") and all(lb in x for lb in labels)]
+
+    assert series("model_cost_usd_total", 'model="claude-x"', 'tenant="northwind"')
+    tokens_in = series("model_tokens_total", 'direction="in"', 'tenant="northwind"')
+    assert tokens_in and float(tokens_in[0].rsplit(" ", 1)[1]) >= 2000
+    assert series("resolution_threads", 'status="running"')

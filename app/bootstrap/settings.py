@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     model_max_retries: int = Field(2, ge=0, le=5)
     model_requests_per_second: float = Field(2.0, gt=0)
     model_max_burst: int = Field(5, ge=1)
+    model_usd_per_mtok_in: float = Field(3.0, ge=0)  # list price of APP_MODEL_NAME; cost metrics only
+    model_usd_per_mtok_out: float = Field(15.0, ge=0)
 
     # --- outbound HTTP and tools (MCP servers are wired in M3)
     http_timeout_s: float = Field(10.0, gt=0)
