@@ -1,0 +1,10 @@
+# checkov in CI (ci.yml, job iac) on infra/terraform and the rendered Kubernetes overlays.
+# Repo-wide skips, each with its reason; resource-level skips sit next to the resource.
+framework: [terraform, kubernetes]
+compact: true
+quiet: true
+skip-download: true
+skip-check:
+  - CKV_K8S_35  # settings are read from env (12-factor); values come from Secret objects created by the pipeline
+  - CKV_K8S_15  # images are immutable per release (sha tag / digest); IfNotPresent is right for kind-loaded images
+  - CKV_K8S_43  # kind loads images by tag (no digest); prod (ECS) runs the image by digest
