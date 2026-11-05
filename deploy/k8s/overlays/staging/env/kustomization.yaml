@@ -1,0 +1,13 @@
+# Everything that makes staging different from the base config (docs/environments.md). Shared by the
+# workload and migrate kustomizations so both always see the same settings.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target: {kind: ConfigMap, name: app-config}
+    patch: |-
+      - op: replace
+        path: /data/APP_ENV
+        value: staging
+      - op: add
+        path: /data/APP_RESOLUTION_TENANTS
+        value: "*"

@@ -10,8 +10,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from starlette.applications import Starlette
 
-from mcp_servers.common import FailureInjection, ToolFailure, with_bearer_auth
+from mcp_servers.common import FailureInjection, ToolFailure, transport_security, with_bearer_auth
 
 NETWORKS = {"VISA", "MASTERCARD"}
 
@@ -85,4 +86,15 @@ def create_server(store: NetworkGatewayStore) -> MCPServer:
 
 STORE = NetworkGatewayStore()
 server = create_server(STORE)
-app = with_bearer_auth(server.streamable_http_app(stateless_http=True, json_response=True), "MCP_NETWORK_TOKEN")
+
+
+def http_app() -> Starlette:
+    return with_bearer_auth(
+        server.streamable_http_app(
+            stateless_http=True, json_response=True, transport_security=transport_security("network-gateway")
+        ),
+        "MCP_NETWORK_TOKEN",
+    )
+
+
+app = http_app()

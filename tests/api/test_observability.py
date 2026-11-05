@@ -110,3 +110,67 @@ def test_r15_exception_logs_carry_type_message_and_frames_but_no_locals(capsys) 
     exc = line["exception"][0]
     assert exc["exc_type"] == "ValueError" and exc["frames"] and "[PAN]" in exc["exc_value"]
     assert card not in json.dumps(line) and "secret_local" not in json.dumps(line)
+
+
+async def test_model_spend_and_thread_status_are_exported(client, app) -> None:
+    """T25.9 cost per tenant (tenant from the run's log context) and the ResolutionsStuck gauge."""
+    import structlog
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    from app.bootstrap.sweeper import Sweeper
+    from app.infrastructure.drafting import UsageMeter, record_usage
+
+    assert record_usage(
+        model="x", input_tokens=2000, output_tokens=500, usd_per_mtok_in=3.0, usd_per_mtok_out=15.0
+    ) == pytest.approx(0.0135)
+    # every chat model the container builds carries UsageMeter (assist and resolution alike)
+    msg = AIMessage(content="ok", usage_metadata={"input_tokens": 2000, "output_tokens": 500, "total_tokens": 2500})
+    structlog.contextvars.bind_contextvars(tenant_id="northwind")
+    try:
+        await UsageMeter(model="claude-x", usd_per_mtok_in=3.0, usd_per_mtok_out=15.0).on_llm_end(
+            LLMResult(generations=[[ChatGeneration(message=msg)]])
+        )
+    finally:
+        structlog.contextvars.unbind_contextvars("tenant_id")
+    await Sweeper(app.state.container).run_once()
+    lines = (await client.get("/metrics")).text.splitlines()
+
+    def series(name: str, *labels: str) -> list[str]:
+        return [x for x in lines if x.startswith(name + "{") and all(lb in x for lb in labels)]
+
+    assert series("model_cost_usd_total", 'model="claude-x"', 'tenant="northwind"')
+    tokens_in = series("model_tokens_total", 'direction="in"', 'tenant="northwind"')
+    assert tokens_in and float(tokens_in[0].rsplit(" ", 1)[1]) >= 2000
+    assert series("resolution_threads", 'status="running"')
+
+
+async def test_slo_queries_use_labels_the_app_exports(client, auth, tools) -> None:
+    """Review of PR #14: the SLO rules filtered on http_route, which the FastAPI instrumentation never exports
+    (it puts the route template in http_target), so two SLOs could never fire."""
+    import importlib.util
+    import re
+    import sys
+    from pathlib import Path
+
+    from tests.graph.test_resolution_graph import dispute, start
+
+    did = await dispute(client, auth, "NW-1001", "10.4", "189.00")
+    assert (await start(client, auth, did)).status_code == 202
+    lines = [x for x in (await client.get("/metrics")).text.splitlines() if x.startswith("http_server_duration")]
+    spec = importlib.util.spec_from_file_location("slos", Path("ops/slo/slos.py"))
+    assert spec and spec.loader
+    slos = importlib.util.module_from_spec(spec)
+    sys.modules["slos"] = slos
+    spec.loader.exec_module(slos)
+    for s in slos.SLOS:
+        for query in (s.bad, s.total):
+            if "http_server_duration" not in query:
+                continue
+            for label, op, value in re.findall(r'(\w+)(=~?)"([^"]+)"', query.format(w="5m")):
+                if label == "le":
+                    continue
+                exported = {m for x in lines for m in re.findall(label + r'="([^"]*)"', x)}
+                assert exported, f"{s.name}: label {label} is not exported"
+                if op == "=":  # exact matchers must name a value the app really emits (e.g. the route template)
+                    assert value in exported, (s.name, label, value, sorted(exported)[:5])

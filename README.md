@@ -104,6 +104,20 @@ Ops scripts: `scripts/checkpoint_setup.py` (deploy), `scripts/prune_checkpoints.
 `scripts/smoke_tools.py` (MCP over HTTP),
 `scripts/export_checkpoint.py` (release fixtures), `scripts/draw_graphs.py` (compiled-graph diagrams).
 
+## Deploy and operate
+
+| What | Where |
+|---|---|
+| Pipeline (build → kind staging with rehearsed rollbacks → AWS prod) | `.github/workflows/deploy.yml`, `scripts/deploy_k8s.sh`, `scripts/deploy_ecs.sh` |
+| Kubernetes (staging) | `deploy/k8s` |
+| AWS (prod) | `infra/terraform` |
+| Environments, connection math | `docs/environments.md` |
+| On-call, rollback, secrets | `docs/runbook.md` |
+| SLOs, alerts, routing | `ops/slo/slos.py`, `ops/alerts/`, `ops/alertmanager/` |
+| Online eval, failure capture | `python -m evals.online score|capture` |
+| Maintenance cadence, skills | `docs/maintenance.md`, `.claude/skills/` |
+| What happens if …? | `docs/concerns.md` |
+
 ## Design docs (resolution workflow v2)
 
 `docs/guarantees.md` · `docs/spec.md` · `specs/*.feature` · `evals/golden_v0.jsonl` · `docs/pressure_cards.md` ·

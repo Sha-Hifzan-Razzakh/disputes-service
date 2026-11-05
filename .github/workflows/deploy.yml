@@ -1,0 +1,211 @@
+name: deploy
+# One image per commit on main, promoted unchanged: build -> staging (kind cluster on the runner) -> prod (AWS).
+# Staging proves the release (migrations first, rollout, smoke across two replicas, egress policy) and rehearses
+# the two ways a release goes wrong: it never becomes ready (automatic abort) and it is ready but broken (smoke
+# fails -> automatic rollback). Prod runs only when AWS is configured (vars.AWS_DEPLOY_ROLE_ARN).
+on:
+  push:
+    branches: [main]
+  pull_request:          # a PR that touches deployment runs the whole staging rehearsal (never prod)
+    paths: [deploy/**, infra/**, Dockerfile, compose.yaml, scripts/deploy_*.sh, tests/smoke/**, .github/workflows/deploy.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/sha-hifzan-razzakh/disputes-service
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: |
+          docker pull "$IMAGE@${{ steps.push.outputs.digest }}" >/dev/null
+          echo "image \`$IMAGE@${{ steps.push.outputs.digest }}\` ($(docker image inspect "$IMAGE@${{ steps.push.outputs.digest }}" --format '{{.Size}}' | numfmt --to=iec))" >> "$GITHUB_STEP_SUMMARY"
+
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: read
+    env:
+      NS: disputes-staging
+      REF: ${{ needs.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f  # v4.0.0
+      - name: kind cluster
+        run: |
+          curl -sSLo kind https://github.com/kubernetes-sigs/kind/releases/download/v0.27.0/kind-linux-amd64
+          echo "a6875aaea358acf0ac07786b1a6755d08fd640f4c79b7a2e46681cc13f49a04b  kind" | sha256sum -c -
+          sudo install kind /usr/local/bin/kind
+          kind create cluster --name staging --wait 120s     # kindnet enforces NetworkPolicy
+      - name: load the exact image built above
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "$IMAGE@$REF"
+          docker tag "$IMAGE@$REF" "disputes-service:${GITHUB_SHA}"
+          kind load docker-image "disputes-service:${GITHUB_SHA}" --name staging
+      - name: secrets (generated per run, never stored)
+        run: |
+          pw=$(openssl rand -hex 16); jwt=$(openssl rand -hex 32); pt=$(openssl rand -hex 16); nt=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"; echo "::add-mask::$jwt"; echo "::add-mask::$pt"; echo "::add-mask::$nt"
+          echo "SMOKE_JWT_SECRET=$jwt" >> "$GITHUB_ENV"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=postgres" -keyout tls.key -out tls.crt 2>/dev/null
+          kubectl create namespace "$NS"
+          kubectl -n "$NS" create secret tls postgres-tls --cert=tls.crt --key=tls.key
+          kubectl -n "$NS" create secret generic postgres-secrets --from-literal=password="$pw"
+          kubectl -n "$NS" create secret generic mcp-secrets --from-literal=payments-token="$pt" --from-literal=network-token="$nt"
+          kubectl -n "$NS" create secret generic app-secrets \
+            --from-literal=APP_DATABASE_URL="postgresql+psycopg://postgres:$pw@postgres:5432/disputes?sslmode=require" \
+            --from-literal=APP_JWT_SECRET="$jwt" \
+            --from-literal=APP_MCP_PAYMENTS_TOKEN="$pt" --from-literal=APP_MCP_NETWORK_TOKEN="$nt"
+          rm -f tls.key tls.crt
+      - name: database
+        run: |
+          kubectl apply -k deploy/k8s/overlays/staging/infra
+          kubectl -n "$NS" rollout status statefulset/postgres --timeout=180s
+      - name: release (migrations, then workloads)
+        run: |
+          start=$(date +%s)
+          scripts/deploy_k8s.sh deploy/k8s/overlays/staging "disputes-service:${GITHUB_SHA}"
+          echo "| release | $(( $(date +%s) - start )) s | migrations then rollout, all ready |" >> report.md
+      - name: smoke across two replicas
+        run: |
+          pods=($(kubectl -n "$NS" get pods -l app.kubernetes.io/name=api -o jsonpath='{.items[*].metadata.name}'))
+          kubectl -n "$NS" port-forward "pod/${pods[0]}" 18000:8000 >/dev/null 2>&1 &
+          kubectl -n "$NS" port-forward "pod/${pods[1]}" 18001:8000 >/dev/null 2>&1 &
+          sleep 3
+          SMOKE_BASE_URL=http://127.0.0.1:18000 SMOKE_BASE_URL_B=http://127.0.0.1:18001 \
+            uv run pytest -q -m smoke tests/smoke
+          echo "| smoke | pass | start on ${pods[0]}, approve and resume on ${pods[1]} |" >> report.md
+      - name: egress policy
+        run: |
+          # allowed: the API reaches Postgres (readyz) and the MCP servers; denied: anything else
+          kubectl -n "$NS" exec deploy/api -- python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"
+          if kubectl -n "$NS" exec deploy/api -- python -c "import socket; socket.create_connection(('1.1.1.1', 443), 3)"; then
+            echo "egress to the internet was NOT blocked"; exit 1
+          fi
+          echo "| egress | pass | internet blocked; Postgres and MCP reachable |" >> report.md
+      - name: "rehearsal: release never becomes ready -> automatic abort"
+        run: |
+          start=$(date +%s)
+          # an invalid setting makes the new pods fail at start (settings validator); old pods keep serving
+          kubectl -n "$NS" set env deploy/api APP_MAX_CONCURRENT_RUNS=500
+          if kubectl -n "$NS" rollout status deploy/api --timeout=90s; then echo "bad release became ready"; exit 1; fi
+          serving=$(kubectl -n "$NS" get deploy api -o jsonpath='{.status.availableReplicas}')   # old pods kept serving
+          [ "$serving" = "2" ] || { echo "only $serving replicas available during the bad rollout"; exit 1; }
+          kubectl -n "$NS" rollout undo deploy/api
+          kubectl -n "$NS" rollout status deploy/api --timeout=180s
+          echo "| abort | $(( $(date +%s) - start )) s | never-ready release undone; 2/2 old replicas served throughout |" >> report.md
+      - name: "rehearsal: ready but broken -> smoke fails -> automatic rollback"
+        run: |
+          start=$(date +%s)
+          kubectl -n "$NS" set env deploy/api APP_RESOLUTION_TENANTS=nobody   # starts refused with 403
+          kubectl -n "$NS" rollout status deploy/api --timeout=180s
+          pkill -f "kubectl -n $NS port-forward" || true
+          kubectl -n "$NS" port-forward svc/api 18000:80 >/dev/null 2>&1 &
+          sleep 3
+          if SMOKE_BASE_URL=http://127.0.0.1:18000 uv run pytest -q -m smoke tests/smoke -x; then
+            echo "broken release passed smoke"; exit 1
+          fi
+          kubectl -n "$NS" rollout undo deploy/api
+          kubectl -n "$NS" rollout status deploy/api --timeout=180s
+          pkill -f "kubectl -n $NS port-forward" || true
+          kubectl -n "$NS" port-forward svc/api 18000:80 >/dev/null 2>&1 &
+          sleep 3
+          SMOKE_BASE_URL=http://127.0.0.1:18000 uv run pytest -q -m smoke tests/smoke
+          echo "| rollback | $(( $(date +%s) - start )) s | smoke caught the broken release; rolled back; smoke green |" >> report.md
+      - name: report
+        if: always()
+        run: |
+          { echo "### staging (kind) for ${GITHUB_SHA::7}"; echo "| step | result | detail |"; echo "|---|---|---|"; cat report.md 2>/dev/null; } >> "$GITHUB_STEP_SUMMARY"
+          kubectl -n "$NS" get pods -o wide || true
+      - name: diagnostics
+        if: failure()
+        run: |
+          kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -40 || true
+          for d in api payments network-gateway; do kubectl -n "$NS" logs "deploy/$d" --tail=60 || true; done
+          kubectl -n "$NS" logs job/migrate --tail=60 || true
+
+  prod:
+    needs: [build, staging]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'   # main only, never a branch
+    runs-on: ubuntu-latest
+    environment: production        # add required reviewers on this environment in GitHub
+    permissions:
+      contents: read
+      packages: read
+      id-token: write              # OIDC to AWS: no long-lived keys
+    env:
+      AWS_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_VAR_certificate_arn: ${{ vars.CERTIFICATE_ARN }}
+    steps:
+      - name: prod configured?
+        id: cfg
+        run: |
+          if [ -z "$AWS_ROLE" ] || [ -z "$TF_VAR_certificate_arn" ]; then
+            echo "Prod not configured (vars.AWS_DEPLOY_ROLE_ARN / vars.CERTIFICATE_ARN unset): staging passed; nothing promoted." >> "$GITHUB_STEP_SUMMARY"
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cfg.outputs.on == 'true'
+        uses: actions/checkout@v4
+      - if: steps.cfg.outputs.on == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - if: steps.cfg.outputs.on == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false      # plain stdout for `terraform output -raw`
+      - if: steps.cfg.outputs.on == 'true'
+        uses: docker/login-action@v3    # the source image is in GHCR (private package)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.cfg.outputs.on == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.cfg.outputs.on == 'true'
+        uses: astral-sh/setup-uv@v5       # synthetic check after the rollout
+      - if: steps.cfg.outputs.on == 'true'
+        run: uv sync --frozen --no-dev
+      - name: promote the staging digest to ECR, migrate, roll out
+        if: steps.cfg.outputs.on == 'true'
+        run: scripts/deploy_ecs.sh prod "${{ env.IMAGE }}@${{ needs.build.outputs.digest }}"

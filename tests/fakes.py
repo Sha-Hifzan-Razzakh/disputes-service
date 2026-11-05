@@ -158,12 +158,16 @@ class MemThreads:
     rows: dict[str, ThreadRecord] = field(default_factory=dict)
     locks: dict[str, asyncio.Lock] = field(default_factory=dict)
 
-    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str) -> str:
+    async def start(
+        self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str, graph_version: str = "unknown"
+    ) -> str:
         if active := await self.active_for(tenant_id, dispute_id):
             raise ResolutionInProgress(str(dispute_id), active)
         n = sum(1 for r in self.rows.values() if r.dispute_id == dispute_id) + 1
         tid = f"{graph}:{dispute_id}:{n}"
-        self.rows[tid] = ThreadRecord(tid, tenant_id, dispute_id, graph, "running", started_by, NOW)
+        self.rows[tid] = ThreadRecord(
+            tid, tenant_id, dispute_id, graph, "running", started_by, NOW, None, graph_version
+        )
         return tid
 
     def register(self, thread_id: str, tenant_id: str = "northwind", dispute_id: uuid.UUID | None = None) -> None:
@@ -195,6 +199,13 @@ class MemThreads:
             ),
             None,
         )
+
+    async def counts(self, graph: str) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for r in self.rows.values():
+            if r.graph == graph:
+                out[r.status] = out.get(r.status, 0) + 1
+        return out
 
     @asynccontextmanager
     async def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AsyncIterator[None]:

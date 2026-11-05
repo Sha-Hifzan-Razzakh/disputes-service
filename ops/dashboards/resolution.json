@@ -269,7 +269,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_duration_milliseconds_count{http_route=~\"/v2/.*\",http_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_route=~\"/v2/.*\"}[5m])), 1e-9)",
+          "expr": "sum(rate(http_server_duration_milliseconds_count{http_target=~\"/v2/.*\",http_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{http_target=~\"/v2/.*\"}[5m])), 1e-9)",
           "legendFormat": "5xx"
         }
       ]

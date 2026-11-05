@@ -26,6 +26,7 @@ from app.infrastructure.drafting import (
     LlmResolutionDrafter,
     RuleBasedDrafter,
     RuleBasedResolutionDrafter,
+    UsageMeter,
 )
 from app.infrastructure.repositories import SqlDisputeRepository, SqlEvidenceRepository, SqlLedger
 from app.infrastructure.retrieval import HashingEmbedder, SqlPolicyStore
@@ -95,6 +96,12 @@ class Container:
         return Ctx(tenant_id=tenant_id, user_id=user_id, role=role, request_id=request_id, services=self.graph_services)
 
 
+def _meter(s: Settings) -> UsageMeter:
+    return UsageMeter(
+        model=s.model_name, usd_per_mtok_in=s.model_usd_per_mtok_in, usd_per_mtok_out=s.model_usd_per_mtok_out
+    )
+
+
 def build_drafter(s: Settings) -> RecommendationDrafter:
     """Model client built once, with timeout, retries and a client-side rate limiter (T07.5)."""
     if s.model_provider != "anthropic" or s.anthropic_api_key is None:
@@ -109,6 +116,7 @@ def build_drafter(s: Settings) -> RecommendationDrafter:
         timeout=s.model_timeout_s,
         max_retries=s.model_max_retries,
         rate_limiter=limiter,
+        callbacks=[_meter(s)],
     )
     return AnthropicDrafter(llm)
 
@@ -129,6 +137,7 @@ def build_resolution_drafter(s: Settings) -> ResolutionDrafter:
             requests_per_second=s.model_requests_per_second, max_bucket_size=s.model_max_burst
         ),
         temperature=0,
+        callbacks=[_meter(s)],
     )
 
     async def complete(prompt: str) -> str:

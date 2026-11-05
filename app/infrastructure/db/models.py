@@ -148,6 +148,7 @@ class ThreadRow(Base):
             postgresql_where="status IN ('running', 'awaiting_approval', 'resume_failed')",
         ),
         Index("ix_threads_tenant_dispute", "tenant_id", "dispute_id"),
+        Index("ix_threads_graph_version", "graph", "graph_version"),
         CheckConstraint(
             "status IN ('running', 'awaiting_approval', 'done', 'failed', 'resume_failed', 'cancelled')",
             name="ck_threads_status",
@@ -160,6 +161,7 @@ class ThreadRow(Base):
     status: Mapped[str] = mapped_column(String(20))
     outcome: Mapped[str | None] = mapped_column(String(60))
     started_by: Mapped[str] = mapped_column(String(64))
+    graph_version: Mapped[str] = mapped_column(String(40), server_default="2.0.0+s1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

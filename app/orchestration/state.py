@@ -46,6 +46,16 @@ from typing import Annotated, Any, NotRequired, TypedDict
 from app.orchestration.reducers import merge_evidence, write_once
 
 SCHEMA_VERSION = {"assist": 2, "resolution": 1}
+
+
+def graph_version(graph: str) -> str:
+    """Stamped on every thread at start (T26.2): which release and state schema began it, e.g. "2.1.0+s1".
+    Tells support which code path a thread ran and which checkpoint fixtures must keep resuming."""
+    from app import __version__
+
+    return f"{__version__}+s{SCHEMA_VERSION[graph]}"
+
+
 EXCERPT_CHARS = 400
 
 

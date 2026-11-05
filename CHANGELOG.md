@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 — 2026-11-05
+
+### Added
+- **Deploy**: Kubernetes manifests (`deploy/k8s`, staging on kind in CI) and AWS production in Terraform
+  (`infra/terraform`: ECS Fargate, RDS, ALB with WAF, Secrets Manager). `deploy.yml` builds once, deploys the same
+  digest, smoke-tests across two replicas and rehearses both rollback paths on every merge.
+- **Run**: SLOs with burn-rate alerts (`ops/slo`), runbook link on every alert, Alertmanager routing, synthetic
+  monitor, online evaluation and failure capture (`evals/online.py`), model cost per tenant.
+- **Maintain**: `threads.graph_version`, release checkpoints resumed in CI, schema-drift and deprecation gates,
+  monthly refresh issue, quarterly review tooling, PR change types, four team skills.
+- **Concern table** (`docs/concerns.md`, generated from `ops/concerns.py`).
+
+### Fixed
+- MCP servers answered 421 to in-cluster calls (DNS-rebinding protection allowed only localhost).
+
+### Migrations
+`0004` threads.graph_version. Additive, with a server default; run before deploying.
+
+
 ## 2.0.0 — 2026-11-04
 
 ### Added

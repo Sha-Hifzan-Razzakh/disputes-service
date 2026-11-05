@@ -1,0 +1,164 @@
+{
+  "app_version": "2.1.0",
+  "checkpoint_id": "1f1d8f02-08e5-6d06-8004-79228c7c0a30",
+  "graph": "assist",
+  "metadata": {
+    "parents": {},
+    "request_id": "9c7de33caa5941c5b13f9cd9e433419b",
+    "source": "loop",
+    "step": 4,
+    "tenant_id": "northwind",
+    "user_id": "ana"
+  },
+  "state_schema": "assist-v2",
+  "thread_id": "assist:97e56997-3594-4f81-87b6-d0a50f9ca011",
+  "values": {
+    "citations": [
+      "42ce915d-19e7-4fee-b874-8cf9a73a6c0a",
+      "a0f8d199-a056-49b0-b10d-e8a05d406944"
+    ],
+    "dispute": {
+      "amount": "189.00",
+      "currency": "USD",
+      "id": "97e56997-3594-4f81-87b6-d0a50f9ca011",
+      "network": "VISA",
+      "reason_code": "10.4",
+      "respond_by": "2026-12-05T08:08:47.314571+00:00",
+      "status": "UNDER_REVIEW"
+    },
+    "evidence": [
+      {
+        "excerpt": "AVS result Y, CVV result M",
+        "id": "ledger:avs_cvv",
+        "kind": "avs_cvv_result",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "AVS / CVV"
+      },
+      {
+        "excerpt": "Carrier status DELIVERED, tracking 1Z999AA10123456784",
+        "id": "ledger:delivery",
+        "kind": "delivery_proof",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "Delivery"
+      },
+      {
+        "excerpt": "Prior refunds 0.00 on a 189.00 transaction",
+        "id": "ledger:refunds",
+        "kind": "refund_none",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "Refunds"
+      },
+      {
+        "excerpt": "3-D Secure authenticated for NW-1001",
+        "id": "ledger:three_ds",
+        "kind": "three_ds_result",
+        "scope": null,
+        "score": 1.0,
+        "source": "ledger",
+        "title": "3-D Secure"
+      },
+      {
+        "excerpt": "For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3-D Secure, because successful authentication shifts fraud liability to the issuer.",
+        "id": "policy:42ce915d-19e7-4fee-b874-8cf9a73a6c0a",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.4118,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Without 3-D Secure authentication and without matching AVS and CVV results the merchant should normally accept the dispute and refund the cardholder, because a representment is unlikely to succeed.",
+        "id": "policy:a0f8d199-a056-49b0-b10d-e8a05d406944",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.3977,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Compelling evidence for card-absent fraud includes a full AVS match together with a CVV match, prior undisputed transactions on the same card from the same device or shipping address, and proof that the goods were delivered to the cardholder's billing address.",
+        "id": "policy:dca6f688-7b63-4d55-b688-232d9c9fe018",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.2715,
+        "source": "policy",
+        "title": "Network rules summary: card-absent fraud (Visa 10.4, Mastercard 4837)"
+      },
+      {
+        "excerpt": "Orders above 250 USD are shipped with signature on delivery. For fraud disputes on 3-D Secure authenticated orders, Northwind contests by default.",
+        "id": "policy:06946172-df51-4f96-a8ea-cd082f64b10c",
+        "kind": "merchant_policy",
+        "scope": "tenant",
+        "score": 0.191,
+        "source": "policy",
+        "title": "Northwind refund and dispute policy"
+      },
+      {
+        "excerpt": "If the tracking record shows the parcel still in transit, returned, or lost, the merchant should accept the dispute and refund, or ship a replacement only if the cardholder agrees in writing.",
+        "id": "policy:63c0786c-2fcc-4fc0-adfd-452725041b41",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.0813,
+        "source": "policy",
+        "title": "Network rules summary: merchandise not received (Visa 13.1)"
+      },
+      {
+        "excerpt": "When the item was used, opened or partly consumed, a partial refund that deducts a disclosed restocking or usage fee may be appropriate; the remainder can be contested with the disclosed return policy as evidence.",
+        "id": "policy:34c26ab1-3411-49ad-ae8c-179ec231a089",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.076,
+        "source": "policy",
+        "title": "Network rules summary: not as described or defective (Visa 13.3, Mastercard 4853)"
+      },
+      {
+        "excerpt": "If the cardholder returned the item and the merchant received it, the merchant should refund in full.",
+        "id": "policy:f3800043-0509-499b-93c3-06c07293c45d",
+        "kind": "network_rule",
+        "scope": "network",
+        "score": 0.0738,
+        "source": "policy",
+        "title": "Network rules summary: not as described or defective (Visa 13.3, Mastercard 4853)"
+      }
+    ],
+    "evidence_grade": {
+      "best_score": 0.4118,
+      "can_retry": true,
+      "missing": [],
+      "sufficient": true
+    },
+    "evidence_kinds": [],
+    "history": [
+      {
+        "answer": "Recommend CONTEST: 3-D Secure authenticated with matching AVS/CVV. Relevant policy: \"For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3\". Question answered: What evidence helps?",
+        "question": "What evidence helps?"
+      }
+    ],
+    "queries": [
+      "VISA 10.4 FRAUD What evidence helps?",
+      "card-absent fraud 3-D Secure AVS CVV liability merchant policy"
+    ],
+    "question": "What evidence helps?",
+    "reason_family": "FRAUD",
+    "recommendation": "Recommend CONTEST: 3-D Secure authenticated with matching AVS/CVV. Relevant policy: \"For card-absent fraud disputes the cardholder states they did not authorise the purchase. The merchant can contest when the transaction was authenticated with 3\". Question answered: What evidence helps?",
+    "retrieval_attempts": 1,
+    "schema_version": 2,
+    "suggested_resolution": "CONTEST",
+    "transaction": {
+      "amount": "189.00",
+      "avs_result": "Y",
+      "cvv_result": "M",
+      "delivery_status": "DELIVERED",
+      "delivery_tracking": "1Z999AA10123456784",
+      "ref": "NW-1001",
+      "refunded": "0.00",
+      "three_ds_authenticated": true
+    }
+  }
+}

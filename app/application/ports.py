@@ -181,6 +181,7 @@ class ThreadRecord:
     started_by: str
     created_at: datetime
     outcome: str | None = None
+    graph_version: str | None = None  # release + state schema that started the thread (T26.2)
 
 
 class CaseReader(Protocol):
@@ -198,7 +199,9 @@ class ResolutionDrafter(Protocol):
 
 
 class ThreadRegistry(Protocol):
-    async def start(self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str) -> str:
+    async def start(
+        self, *, tenant_id: str, dispute_id: uuid.UUID, graph: str, started_by: str, graph_version: str = "unknown"
+    ) -> str:
         """Register a new thread and return its id; raises ResolutionInProgress if one is active."""
         ...
 
@@ -210,6 +213,10 @@ class ThreadRegistry(Protocol):
         ...
 
     async def active_for(self, tenant_id: str, dispute_id: uuid.UUID) -> str | None: ...
+    async def counts(self, graph: str) -> dict[str, int]:
+        """Threads of one graph by status, across tenants (operations metric)."""
+        ...
+
     def exclusive(self, thread_id: str, *, wait_s: float = 0.0) -> AbstractAsyncContextManager[None]:
         """Hold the thread for one invocation across all replicas, waiting up to `wait_s` for another holder;
         raises ThreadBusy after that."""

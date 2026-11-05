@@ -1,6 +1,9 @@
-"""Export the latest checkpoint of an assist thread as a JSON fixture.
+"""Export the latest checkpoint of a thread as a JSON fixture (every release: .claude/skills/release-checkpoint).
 
-    uv run python scripts/export_checkpoint.py assist:<dispute_id> tests/fixtures/checkpoints/v2_assist.json assist 2
+    uv run python scripts/export_checkpoint.py assist:<dispute_id> \
+        tests/fixtures/checkpoints/release_<v>_assist.json assist 2
+    uv run python scripts/export_checkpoint.py resolution:<dispute_id>:<n> \
+        tests/fixtures/checkpoints/release_<v>_resolution_awaiting.json resolution 1
 
 The fixture records the state values and checkpoint metadata so later releases can test that
 threads created by this version still resume.

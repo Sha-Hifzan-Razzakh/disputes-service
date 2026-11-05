@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -50,6 +51,18 @@ class FailureInjection:
         if codes:
             code = codes.pop(0)
             raise ToolFailure(code, f"injected failure for {tool}")
+
+
+def transport_security(service: str) -> TransportSecuritySettings:
+    """DNS-rebinding protection that accepts the names this server is really reached by: localhost, and its
+    service name in Kubernetes / ECS Service Connect ("payments:8101"). The SDK's default (localhost only)
+    answered 421 to every in-cluster call (found by the first staging deploy). MCP_ALLOWED_HOSTS adds more."""
+    extra = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", f"{service}:*", *extra],
+        allowed_origins=[],
+    )
 
 
 def with_bearer_auth(app: Starlette, token_env: str) -> Starlette:

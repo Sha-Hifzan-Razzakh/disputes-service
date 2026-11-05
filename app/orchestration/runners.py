@@ -20,6 +20,7 @@ from app.application.errors import RunAborted, SideEffectUnsettled, ThreadBusy
 from app.application.ports import CaseSnapshot
 from app.domain.errors import InvalidTransition, NotFound
 from app.orchestration.context import Ctx
+from app.orchestration.state import graph_version
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +100,11 @@ class ResolutionRunner:
         if unsettled := await s.side_effects.open_for(ctx.tenant_id, dispute_id):
             raise SideEffectUnsettled(str(dispute_id), [r.idempotency_key for r in unsettled])
         thread_id = await s.threads.start(
-            tenant_id=ctx.tenant_id, dispute_id=dispute_id, graph="resolution", started_by=ctx.user_id
+            tenant_id=ctx.tenant_id,
+            dispute_id=dispute_id,
+            graph="resolution",
+            started_by=ctx.user_id,
+            graph_version=graph_version("resolution"),
         )
         inp = {"dispute_id": str(dispute_id), "requested_by": ctx.user_id, "instructions": instructions}
         await self._invoke(inp, thread_id, ctx)

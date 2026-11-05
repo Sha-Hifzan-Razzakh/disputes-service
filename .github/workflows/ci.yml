@@ -118,3 +118,34 @@ jobs:
           APP_MCP_NETWORK_TOKEN: dev-network-token
       - if: always()
         run: docker compose down -v
+
+  iac:
+    # Terraform (prod) and Kubernetes (staging) definitions: format, validate, schema, policy (checkov).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: terraform fmt / validate
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive -diff
+          terraform init -backend=false -input=false
+          terraform validate
+      - uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f  # v4.0.0
+      - name: render overlays
+        run: |
+          mkdir -p rendered
+          for d in staging staging/migrate staging/infra; do
+            kubectl kustomize "deploy/k8s/overlays/$d" | sed "s#image: disputes-service:local#image: disputes-service:${GITHUB_SHA::7}#" > "rendered/${d//\//-}.yaml"
+          done
+      - name: kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.32.0 rendered/*.yaml
+      - uses: astral-sh/setup-uv@v5
+      - name: checkov
+        run: |
+          uvx --from checkov==3.2.400 checkov --config-file .checkov.yaml -d infra/terraform
+          uvx --from checkov==3.2.400 checkov --config-file .checkov.yaml -d rendered

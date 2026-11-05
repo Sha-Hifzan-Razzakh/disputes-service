@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Iterable
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from opentelemetry import metrics
+from opentelemetry.metrics import Observation
 
 from app.application.approvals import SWEEPER, ApprovalService, resume_value
 
@@ -20,6 +23,18 @@ if TYPE_CHECKING:
     from app.bootstrap.container import Container
 
 log = structlog.get_logger()
+_thread_counts: dict[str, int] = {}
+
+
+def _observe_threads(_: Any) -> Iterable[Observation]:
+    return [Observation(n, {"status": status}) for status, n in _thread_counts.items()]
+
+
+metrics.get_meter("disputes.ops").create_observable_gauge(
+    "resolution_threads",
+    callbacks=[_observe_threads],
+    description="Resolution threads by status (refreshed each sweep)",
+)
 LOOKUP = {"refund": "payments.get_refund", "representment": "network.get_submission"}
 
 
@@ -49,6 +64,11 @@ class Sweeper:
                     rec.thread_id, "resume_failed", only_from=("awaiting_approval", "running", "failed")
                 )
         reconciled = await self.reconcile()
+        counts = await gs.threads.counts("resolution")  # ResolutionsStuck alert: failed / resume_failed > 0
+        _thread_counts.clear()
+        _thread_counts.update(
+            {k: counts.get(k, 0) for k in ("running", "awaiting_approval", "resume_failed", "failed")}
+        )
         return {"expired": len(expired), "resumed": resumed, "reconciled": reconciled}
 
     async def reconcile(self) -> int:

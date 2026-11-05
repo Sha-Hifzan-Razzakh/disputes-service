@@ -1,48 +1,95 @@
-# Prometheus alerting rules for the disputes service (T13.9). Series come from /metrics (OpenTelemetry → Prometheus).
+# Prometheus alerting rules for the disputes service (T13.9, T25.8). Every alert carries runbook_url; routing
+# is in ops/alertmanager/alertmanager.yml. SLO burn alerts are generated: ops/alerts/slo.rules.yml.
 groups:
-  - name: disputes-resolution
-    rules:
-      - alert: ResolutionExecutionFailures
-        expr: sum(increase(resolution_outcomes_total{outcome="EXECUTION_FAILED"}[30m])) > 0
-        for: 0m
-        labels: {severity: page}
-        annotations:
-          summary: "Approved refunds/representments failed to execute"
-          runbook: "docs/recovery.md#recovery-procedure — check tool_calls for the idempotency key; unknown → sweeper reconciles"
-      - alert: ToolCallsMostlyFailing
-        expr: |
-          sum by (tool) (increase(tool_calls_total{status=~"error|retryable_error"}[10m]))
-            / clamp_min(sum by (tool) (increase(tool_calls_total{status!="denied"}[10m])), 1) > 0.2
-        for: 5m
-        labels: {severity: page}
-        annotations:
-          summary: "{{ $labels.tool }}: more than 20% of calls failing"
-          runbook: "Set APP_TOOLS_ENABLED=false if the provider is down; approvals stay pending and retry later"
-      - alert: ToolCallsDenied
-        expr: sum by (tool) (increase(tool_calls_total{status="denied"}[15m])) > 5
-        for: 0m
-        labels: {severity: ticket}
-        annotations:
-          summary: "Gateway denied {{ $labels.tool }} repeatedly (policy, tenant, approval, pin or rate limit)"
-      - alert: GraphNodeErrors
-        expr: sum by (node, error) (increase(graph_node_errors_total[10m])) > 3
-        for: 5m
-        labels: {severity: ticket}
-        annotations:
-          summary: "{{ $labels.node }} raised {{ $labels.error }} more than 3 times in 10m"
-          runbook: "GET /admin/threads/{id}/history for an affected thread; recover with POST /admin/threads/{id}/recover"
-      - alert: AbstentionRateHigh
-        expr: |
-          sum(increase(resolution_outcomes_total{outcome=~"ABSTAINED_.*"}[1h]))
-            / clamp_min(sum(increase(resolution_outcomes_total[1h])), 1) > 0.35
-        for: 30m
-        labels: {severity: ticket}
-        annotations:
-          summary: "More than 35% of resolutions abstain — retrieval or policy content regression?"
-      - alert: ResolutionNodeSlow
-        expr: |
-          histogram_quantile(0.95, sum by (le, node) (rate(graph_node_duration_milliseconds_bucket{graph="resolution"}[10m]))) > 5000
-        for: 10m
-        labels: {severity: ticket}
-        annotations:
-          summary: "p95 of {{ $labels.node }} above 5 s (spec latency budget at risk)"
+- name: disputes-resolution
+  rules:
+  - alert: ResolutionExecutionFailures
+    expr: sum(increase(resolution_outcomes_total{outcome="EXECUTION_FAILED"}[30m])) > 0
+    for: 0m
+    labels:
+      severity: page
+    annotations:
+      summary: Approved refunds/representments failed to execute
+      description: "docs/recovery.md#recovery-procedure \u2014 check tool_calls for the idempotency key; unknown \u2192 sweeper reconciles"
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#execution-failures
+  - alert: ToolCallsMostlyFailing
+    expr: "sum by (tool) (increase(tool_calls_total{status=~\"error|retryable_error\"}[10m]))\n  / clamp_min(sum by (tool) (increase(tool_calls_total{status!=\"\
+      denied\"}[10m])), 1) > 0.2\n"
+    for: 5m
+    labels:
+      severity: page
+    annotations:
+      summary: '{{ $labels.tool }}: more than 20% of calls failing'
+      description: Set APP_TOOLS_ENABLED=false if the provider is down; approvals stay pending and retry later
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#tool-calls-failing
+  - alert: ToolCallsDenied
+    expr: sum by (tool) (increase(tool_calls_total{status="denied"}[15m])) > 5
+    for: 0m
+    labels:
+      severity: ticket
+    annotations:
+      summary: Gateway denied {{ $labels.tool }} repeatedly (policy, tenant, approval, pin or rate limit)
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#tool-calls-denied
+  - alert: GraphNodeErrors
+    expr: sum by (node, error) (increase(graph_node_errors_total[10m])) > 3
+    for: 5m
+    labels:
+      severity: ticket
+    annotations:
+      summary: '{{ $labels.node }} raised {{ $labels.error }} more than 3 times in 10m'
+      description: GET /admin/threads/{id}/history for an affected thread; recover with POST /admin/threads/{id}/recover
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#graph-node-errors
+  - alert: AbstentionRateHigh
+    expr: "sum(increase(resolution_outcomes_total{outcome=~\"ABSTAINED_.*\"}[1h]))\n  / clamp_min(sum(increase(resolution_outcomes_total[1h])),\
+      \ 1) > 0.35\n"
+    for: 30m
+    labels:
+      severity: ticket
+    annotations:
+      summary: "More than 35% of resolutions abstain \u2014 retrieval or policy content regression?"
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#abstention-rate-high
+  - alert: ResolutionNodeSlow
+    expr: 'histogram_quantile(0.95, sum by (le, node) (rate(graph_node_duration_milliseconds_bucket{graph="resolution"}[10m]))) > 5000
+
+      '
+    for: 10m
+    labels:
+      severity: ticket
+    annotations:
+      summary: p95 of {{ $labels.node }} above 5 s (spec latency budget at risk)
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#resolution-node-slow
+- name: disputes-operations
+  rules:
+  - alert: SyntheticCheckFailing
+    expr: time() - max(kube_cronjob_status_last_successful_time{cronjob="synthetic"}) > 900
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: The in-cluster synthetic request has failed for 10 minutes
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#synthetic-check-failing
+  - alert: OnlineEvalDrift
+    expr: min by (check) (online_eval_score) < on (check) group_left online_eval_threshold
+    for: 0m
+    labels:
+      severity: ticket
+    annotations:
+      summary: Online check {{ $labels.check }} fell below its threshold on production runs
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#online-eval-drift
+  - alert: ModelCostSpike
+    expr: sum by (tenant) (increase(model_cost_usd_total[1h])) > 3 * sum by (tenant) (increase(model_cost_usd_total[1h] offset 1d)) and sum by
+      (tenant) (increase(model_cost_usd_total[1h])) > 1
+    for: 30m
+    labels:
+      severity: ticket
+    annotations:
+      summary: Model spend for {{ $labels.tenant }} is 3x the same hour yesterday
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#model-cost-spike
+  - alert: ResolutionsStuck
+    expr: max(resolution_threads{status=~"resume_failed|failed"}) > 0
+    for: 15m
+    labels:
+      severity: ticket
+    annotations:
+      summary: '{{ $value }} resolution threads need an operator (failed or resume_failed)'
+      runbook_url: https://github.com/Sha-Hifzan-Razzakh/disputes-service/blob/main/docs/runbook.md#resolutions-stuck
