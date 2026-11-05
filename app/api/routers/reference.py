@@ -7,20 +7,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 
-from app.api.deps import Principal, Session, get_container_dep, policy_service, require_role
+from app.api.deps import AppContainer, Principal, ledger, policy_service, require_role
 from app.api.schemas import PolicyDocIn, PolicyDocOut, TransactionOut
+from app.application.ports import Ledger
 from app.application.services import PolicyService
-from app.bootstrap.container import Container
-from app.infrastructure.repositories import SqlLedger
 
 router = APIRouter()
 
 
 @router.get("/v1/transactions/{ref}", response_model=TransactionOut, tags=["transactions"])
 async def get_transaction(
-    ref: str, p: Annotated[Principal, Depends(require_role("analyst"))], s: Session
+    ref: str, p: Annotated[Principal, Depends(require_role("analyst"))], lg: Annotated[Ledger, Depends(ledger)]
 ) -> TransactionOut:
-    return TransactionOut.of(await SqlLedger(s).get_transaction(p.tenant_id, ref))
+    return TransactionOut.of(await lg.get_transaction(p.tenant_id, ref))
 
 
 @router.post(
@@ -44,7 +43,7 @@ async def healthz() -> dict[str, bool]:
 
 
 @router.get("/readyz", tags=["health"])
-async def readyz(c: Annotated[Container, Depends(get_container_dep)]) -> dict[str, bool]:
+async def readyz(c: AppContainer) -> dict[str, bool]:
     async with c.engine.connect() as conn:
         await conn.execute(text("select 1"))
     async with c.checkpoint_pool.connection() as conn:

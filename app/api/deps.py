@@ -1,22 +1,29 @@
-"""Request-scoped dependencies: principal from JWT, DB session, services."""
+"""Request-scoped dependencies: principal from JWT, DB session, services and graph context.
+
+Adapters are never named here: services come from the container's factories (`lint-imports` enforces it).
+"""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+import asyncio
+from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.assist import AssistService
-from app.application.services import DisputeService, PolicyService, SystemClock
+from app.application.case import CaseService
+from app.application.errors import TooManyRuns
+from app.application.ports import Ledger
+from app.application.services import DisputeService, PolicyService
 from app.bootstrap.container import Container
-from app.infrastructure.repositories import SqlDisputeRepository, SqlEvidenceRepository, SqlLedger
+from app.domain.roles import ROLE_RANK
+from app.orchestration.context import Ctx
+from app.orchestration.runners import AssistRunner, ResolutionRunner
 
-ROLE_RANK = {"analyst": 1, "ops_lead": 2, "admin": 3}
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -31,9 +38,11 @@ def get_container_dep(request: Request) -> Container:
     return request.app.state.container  # type: ignore[no-any-return]
 
 
+AppContainer = Annotated[Container, Depends(get_container_dep)]
+
+
 def current_principal(
-    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-    c: Annotated[Container, Depends(get_container_dep)],
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)], c: AppContainer
 ) -> Principal:
     if creds is None:
         raise HTTPException(401, "missing bearer token")
@@ -60,7 +69,7 @@ def require_role(minimum: str) -> Callable[[Principal], Principal]:
     return dep
 
 
-async def db_session(c: Annotated[Container, Depends(get_container_dep)]) -> AsyncIterator[AsyncSession]:
+async def db_session(c: AppContainer) -> AsyncIterator[AsyncSession]:
     async with c.sessions() as s:
         try:
             yield s
@@ -70,16 +79,55 @@ async def db_session(c: Annotated[Container, Depends(get_container_dep)]) -> Asy
             raise
 
 
-Session = Annotated[AsyncSession, Depends(db_session)]
+# scope="function": commit BEFORE the response is sent. With the default ("request") the commit ran after the response,
+# so a client's next request — on another worker — could read the old version and get a false 409 (load test, M4).
+Session = Annotated[AsyncSession, Depends(db_session, scope="function")]
 
 
-def dispute_service(s: Session) -> DisputeService:
-    return DisputeService(SqlDisputeRepository(s), SqlEvidenceRepository(s), SqlLedger(s), SystemClock())
+def dispute_service(s: Session, c: AppContainer) -> DisputeService:
+    return c.dispute_service(s)
 
 
-def assist_service(s: Session, c: Annotated[Container, Depends(get_container_dep)]) -> AssistService:
-    return AssistService(SqlDisputeRepository(s), SqlEvidenceRepository(s), SqlLedger(s), c.assist_graph)
+def case_service(s: Session, c: AppContainer) -> CaseService:
+    return c.case_service(s)
 
 
-def policy_service(c: Annotated[Container, Depends(get_container_dep)]) -> PolicyService:
-    return PolicyService(c.policy_store)
+def ledger(s: Session, c: AppContainer) -> Ledger:
+    return c.ledger(s)
+
+
+def policy_service(c: AppContainer) -> PolicyService:
+    return c.policy_service()
+
+
+def assist_runner(c: AppContainer) -> AssistRunner:
+    return c.assist_runner()
+
+
+def resolution_runner(c: AppContainer) -> ResolutionRunner:
+    return c.resolution_runner()
+
+
+def graph_context(request: Request, c: AppContainer, p: Annotated[Principal, Depends(current_principal)]) -> Ctx:
+    """Ctx for every graph invocation (T07.8): identity from the JWT, request id from the middleware."""
+    return c.graph_context(tenant_id=p.tenant_id, user_id=p.user_id, role=p.role, request_id=request.state.request_id)
+
+
+async def bounded_run[T](run: Coroutine[Any, Any, T], c: Container) -> T:
+    """Admission control (T16.13) then the API-level run timeout (T07.9). A run that cannot get a slot within
+    APP_ADMISSION_WAIT_S is refused with 429 before touching the graph; a timed-out run keeps its checkpoint."""
+    slots = c.run_slots
+    if slots is not None:
+        try:
+            await asyncio.wait_for(slots.acquire(), timeout=c.settings.admission_wait_s)
+        except TimeoutError:
+            run.close()  # never started
+            raise TooManyRuns(f"{c.settings.max_concurrent_runs} runs in progress; retry shortly") from None
+    try:
+        async with asyncio.timeout(c.settings.run_timeout_s):
+            return await run
+    except TimeoutError:
+        raise HTTPException(504, f"run exceeded {c.settings.run_timeout_s:g}s") from None
+    finally:
+        if slots is not None:
+            slots.release()

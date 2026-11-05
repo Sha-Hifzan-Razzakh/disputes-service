@@ -1,7 +1,21 @@
+# uv run pre-commit install   (once per clone). CI runs the same checks in ci.yml.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.0
+    rev: v0.17.3   # keep in step with ruff in pyproject.toml
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: ^tests/fixtures/   # byte-exact exports (scripts/export_checkpoint.py)
+      - id: trailing-whitespace
+        exclude: ^tests/fixtures/
+      - id: check-added-large-files
+        args: [--maxkb=600]
+      - id: check-merge-conflict
+      - id: detect-private-key

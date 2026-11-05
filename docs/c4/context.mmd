@@ -1,0 +1,18 @@
+%% C4 level 1 — system context (T04.6)
+flowchart LR
+  analyst([Analyst]):::person
+  ops([Ops lead / Admin]):::person
+  svc[Disputes Service<br/>FastAPI + LangGraph]:::system
+  pay[(Payments system<br/>via MCP 'payments')]:::ext
+  net[(Card network gateway<br/>via MCP 'network-gateway')]:::ext
+  llm[(Model provider<br/>optional)]:::ext
+  notif[(Notification relay<br/>reads outbox — out of scope)]:::ext
+  analyst -- "start resolution, approve CONTEST / low refunds" --> svc
+  ops -- "approve high refunds, urgent items, admin" --> svc
+  svc -- "get_transaction, issue_refund" --> pay
+  svc -- "submit_representment" --> net
+  svc -. "draft (when APP_MODEL_PROVIDER=anthropic)" .-> llm
+  svc -- "outbox rows" --> notif
+  classDef person fill:#08427b,color:#fff
+  classDef system fill:#1168bd,color:#fff
+  classDef ext fill:#999,color:#fff

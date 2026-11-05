@@ -43,6 +43,30 @@ TRANSITIONS: dict[str, tuple[frozenset[DisputeStatus], DisputeStatus]] = {
 }
 
 
+RESOLVABLE = frozenset({DisputeStatus.EVIDENCE_GATHERING, DisputeStatus.UNDER_REVIEW})
+
+
+def path_to(current: DisputeStatus, goal: DisputeStatus) -> list[str]:
+    """Actions that move a dispute from `current` to `goal` (empty when already there).
+
+    Used by the resolution workflow so a replayed step is a no-op instead of an invalid transition."""
+    if current is goal:
+        return []
+    if current in TERMINAL:
+        raise InvalidTransition(current, f"advance to {goal.value}")
+    if goal is DisputeStatus.EVIDENCE_GATHERING:
+        return ["start_evidence"]
+    if goal in (DisputeStatus.RESOLVED_ACCEPTED, DisputeStatus.RESOLVED_CONTESTED):
+        final = "resolve_accept" if goal is DisputeStatus.RESOLVED_ACCEPTED else "resolve_contest"
+        if current is DisputeStatus.UNDER_REVIEW:
+            return [final]
+        lead = ["start_evidence"] if current is DisputeStatus.OPENED else []
+        return [*lead, "submit_for_review", final]
+    if goal is DisputeStatus.EXPIRED:
+        return ["expire"]
+    raise InvalidTransition(current, f"advance to {goal.value}")
+
+
 @dataclass(frozen=True, slots=True)
 class DisputeEvent:
     kind: str
@@ -106,6 +130,10 @@ class Dispute:
     @property
     def is_terminal(self) -> bool:
         return self.status in TERMINAL
+
+    @property
+    def can_start_resolution(self) -> bool:
+        return self.status in RESOLVABLE
 
     def assign(self, user_id: str, *, actor: str, now: datetime) -> None:
         if self.is_terminal:

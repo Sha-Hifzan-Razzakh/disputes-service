@@ -1,0 +1,34 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	upgrade_state(upgrade_state)
+	classify_reason(classify_reason)
+	draft_recommendation(draft_recommendation)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> upgrade_state;
+	classify_reason --> gather_evidence\3a__start__;
+	gather_evidence\3a__end__ --> draft_recommendation;
+	upgrade_state --> classify_reason;
+	draft_recommendation --> __end__;
+	subgraph gather_evidence
+	gather_evidence\3a__start__(<p>__start__</p>)
+	gather_evidence\3aplan_queries(plan_queries)
+	gather_evidence\3aretrieve_policy(retrieve_policy)
+	gather_evidence\3agather_txn_evidence(gather_txn_evidence)
+	gather_evidence\3agrade_evidence(grade_evidence)
+	gather_evidence\3a__end__(<p>__end__</p>)
+	gather_evidence\3a__start__ --> gather_evidence\3aplan_queries;
+	gather_evidence\3agather_txn_evidence --> gather_evidence\3agrade_evidence;
+	gather_evidence\3agrade_evidence -. &nbsp;exhausted&nbsp; .-> gather_evidence\3a__end__;
+	gather_evidence\3agrade_evidence -. &nbsp;retry&nbsp; .-> gather_evidence\3aplan_queries;
+	gather_evidence\3aplan_queries -.-> gather_evidence\3agather_txn_evidence;
+	gather_evidence\3aplan_queries -.-> gather_evidence\3aretrieve_policy;
+	gather_evidence\3aretrieve_policy --> gather_evidence\3agrade_evidence;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

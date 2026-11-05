@@ -22,6 +22,7 @@ def install_request_context(app: FastAPI) -> None:
         response.headers["X-Request-ID"] = rid
         log.info(
             "http",
+            route=getattr(request.scope.get("route"), "path", None),
             method=request.method,
             path=request.url.path,
             status=response.status_code,

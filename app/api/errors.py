@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.application.errors import (
+    ApprovalChanged,
+    ApprovalDecided,
+    ApprovalExpired,
+    FeatureDisabled,
+    Forbidden,
+    ResolutionInProgress,
+    RunAborted,
+    SideEffectUnsettled,
+    ThreadBusy,
+    TooManyRuns,
+)
 from app.domain.errors import DomainError, InvalidTransition, NotFound, VersionConflict
 
 
@@ -27,13 +40,56 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _vc(req: Request, e: VersionConflict) -> JSONResponse:
         return _envelope(req, 409, "version_conflict", str(e))
 
+    @app.exception_handler(ResolutionInProgress)
+    async def _rip(req: Request, e: ResolutionInProgress) -> JSONResponse:
+        return _envelope(req, 409, "resolution_in_progress", str(e))
+
+    @app.exception_handler(ApprovalDecided)
+    async def _ad(req: Request, e: ApprovalDecided) -> JSONResponse:
+        return _envelope(req, 409, "approval_decided", str(e))
+
+    @app.exception_handler(ApprovalExpired)
+    async def _ae(req: Request, e: ApprovalExpired) -> JSONResponse:
+        return _envelope(req, 410, "approval_expired", str(e))
+
+    @app.exception_handler(Forbidden)
+    async def _fb(req: Request, e: Forbidden) -> JSONResponse:
+        return _envelope(req, 403, "forbidden", str(e))
+
+    @app.exception_handler(SideEffectUnsettled)
+    async def _seu(req: Request, e: SideEffectUnsettled) -> JSONResponse:
+        return _envelope(req, 409, "side_effect_unsettled", str(e))
+
+    @app.exception_handler(FeatureDisabled)
+    async def _fd(req: Request, e: FeatureDisabled) -> JSONResponse:
+        return _envelope(req, 403, "resolution_not_enabled", str(e))
+
+    @app.exception_handler(ApprovalChanged)
+    async def _ac(req: Request, e: ApprovalChanged) -> JSONResponse:
+        return _envelope(req, 409, "approval_changed", str(e))
+
+    @app.exception_handler(ThreadBusy)
+    async def _tb(req: Request, e: ThreadBusy) -> JSONResponse:
+        return _envelope(req, 409, "thread_busy", f"thread {e} is being processed by another request")
+
+    @app.exception_handler(TooManyRuns)
+    async def _tm(req: Request, e: TooManyRuns) -> JSONResponse:
+        resp = _envelope(req, 429, "too_many_runs", str(e))
+        resp.headers["Retry-After"] = "2"
+        return resp
+
+    @app.exception_handler(RunAborted)
+    async def _ra(req: Request, e: RunAborted) -> JSONResponse:
+        structlog.get_logger().error("run_aborted", thread_id=e.thread_id, reason=e.reason, alert=True)
+        return _envelope(req, 500, "run_aborted", f"run {e.thread_id} stopped: {e.reason}")
+
     @app.exception_handler(DomainError)
     async def _de(req: Request, e: DomainError) -> JSONResponse:
         return _envelope(req, 422, "rule_violation", str(e))
 
     @app.exception_handler(HTTPException)
     async def _http(req: Request, e: HTTPException) -> JSONResponse:
-        codes = {401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict"}
+        codes = {401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict", 504: "run_timeout"}
         return _envelope(req, e.status_code, codes.get(e.status_code, "http_error"), str(e.detail))
 
     @app.exception_handler(RequestValidationError)

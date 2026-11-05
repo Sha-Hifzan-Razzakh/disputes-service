@@ -255,6 +255,13 @@ Any refund or dispute acceptance of 750 EUR or more requires approval by an oper
     ],
 }
 
+# Tenant dispute policy (matches the merchant policy documents above): approval threshold in the tenant currency,
+# auto-approve limit (None = off), partial-refund percentage.
+TENANT_POLICIES = {
+    "northwind": ("500.00", None, 50),
+    "aurora": ("750.00", None, 50),
+}
+
 # (tenant, txn_ref, network, reason_code, amount, status)
 DISPUTES = [
     ("northwind", "NW-1001", "VISA", "10.4", "189.00", "OPENED"),

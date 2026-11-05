@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule: {interval: weekly}
+    groups:
+      langchain-stack: {patterns: ["langgraph*", "langchain*", "langsmith"]}
+      otel: {patterns: ["opentelemetry-*"]}
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly}

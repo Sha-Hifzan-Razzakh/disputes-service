@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.domain.dispute import Dispute, DisputeStatus
 from app.domain.money import Money
 from app.domain.reason_codes import lookup
-from app.infrastructure.db.models import TenantRow, TransactionRow
+from app.infrastructure.db.models import TenantDisputePolicyRow, TenantRow, TransactionRow
 from app.infrastructure.repositories import SqlDisputeRepository
 from app.infrastructure.retrieval import HashingEmbedder, SqlPolicyStore
 from seeds import data
@@ -33,6 +33,16 @@ async def load(sessions: async_sessionmaker[AsyncSession], *, now: datetime | No
         for t in new_tenants:
             s.add(TenantRow(**t))
         await s.flush()
+        for t in new_tenants:
+            threshold, auto_below, pct = data.TENANT_POLICIES[t["id"]]
+            s.add(
+                TenantDisputePolicyRow(
+                    tenant_id=t["id"],
+                    approval_threshold=data.money(threshold),
+                    auto_approve_below=data.money(auto_below) if auto_below else None,
+                    partial_pct=pct,
+                )
+            )
         for tid, ref, amt, card, avs, cvv, tds, dstat, track, refunded, desc, days in data.TRANSACTIONS:
             if tid in existing:
                 continue

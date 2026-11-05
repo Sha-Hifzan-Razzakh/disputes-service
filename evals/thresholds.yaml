@@ -1,0 +1,20 @@
+# Release gate for evals/run.py (T17.13). Targets come from docs/spec.md §7; a metric below `min` (or above `max`)
+# fails the run, and so does any `min` metric that drops more than `regression_tolerance` below the baseline.
+regression_tolerance: 0.02
+metrics:
+  outcome_match: {min: 0.95}                    # first stop (awaiting approval / terminal outcome)
+  resolution_match: {min: 0.95}                 # spec: decision quality >= 90 %
+  amount_match: {min: 0.98}
+  route_match: {min: 0.98}                      # required role + priority
+  grounded: {min: 1.0}                          # R6: every executed draft cites gathered evidence only
+  abstain_precision: {min: 0.9}
+  abstain_recall: {min: 0.8}
+  retrieval_network_rule_recall: {min: 0.95}
+  retrieval_merchant_policy_recall: {min: 0.9}
+  cross_tenant_evidence: {max: 0}
+  trajectory_exact: {min: 0.95}
+  trajectory_after_approval_exact: {min: 0.98}
+  tool_correct: {min: 0.98}
+  post_approval_outcome_match: {min: 0.98}
+  latency_p95_ms: {max: 3000}                   # spec: p95 start <= 3 s with the rules drafter
+  cost_usd_per_case: {max: 0.03}

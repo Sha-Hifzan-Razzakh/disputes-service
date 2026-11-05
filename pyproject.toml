@@ -1,6 +1,6 @@
 [project]
 name = "disputes-service"
-version = "1.4.0"
+version = "2.0.0"
 description = "Multi-tenant card-payment dispute (chargeback) service with a LangGraph dispute assistant"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,6 +12,14 @@ dependencies = [
     "langchain-core>=1.7.4",
     "langgraph>=1.2.19",
     "langgraph-checkpoint-postgres>=3.2.0",
+    "mcp>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+    "opentelemetry-exporter-prometheus>=0.66b2",
+    "opentelemetry-instrumentation-fastapi>=0.66b2",
+    "opentelemetry-instrumentation-httpx>=0.66b2",
+    "opentelemetry-instrumentation-sqlalchemy>=0.66b2",
+    "opentelemetry-sdk>=1.45.2",
+    "prometheus-client>=0.26.0",
     "psycopg[binary,pool]>=3.3.7",
     "pydantic>=2.14.2",
     "pydantic-settings>=2.16.2",
@@ -24,6 +32,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "asgi-lifespan>=2.1.0",
+    "hypothesis>=6.170.14",
+    "import-linter>=2.15",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
@@ -41,6 +51,7 @@ select = ["E", "F", "I", "B", "UP", "ASYNC", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "seeds/data.py" = ["E501"]
+"evals/*" = ["ASYNC240", "E501"]  # batch scripts: blocking file IO and long table literals are fine
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -48,10 +59,61 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra -p no:cacheprovider"
+addopts = "-ra -p no:cacheprovider -m 'not chaos and not eval'"
+markers = [
+    "chaos: failure-injection suite (nightly workflow; run with -m chaos)",
+    "eval: golden-set evaluation (run with -m eval or evals/run.py)",
+]
 filterwarnings = ["ignore::jwt.warnings.InsecureKeyLengthWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "pragma: no cover", "raise AssertionError"]
 
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: api -> bootstrap -> (orchestration | infrastructure) -> application -> domain"
+type = "layers"
+layers = [
+    "app.main",
+    "app.api",
+    "app.bootstrap",
+    "app.orchestration | app.infrastructure",
+    "app.application",
+    "app.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Graph code never touches vendors, drivers or the container"
+type = "forbidden"
+source_modules = ["app.orchestration"]
+forbidden_modules = ["psycopg", "psycopg_pool", "sqlalchemy", "langchain_anthropic", "anthropic", "httpx", "mcp", "fastapi"]
+
+[[tool.importlinter.contracts]]
+name = "API never builds adapters itself"
+type = "forbidden"
+source_modules = ["app.api"]
+forbidden_modules = ["app.infrastructure", "langgraph", "psycopg_pool"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Use cases and domain stay framework-free"
+type = "forbidden"
+source_modules = ["app.application", "app.domain"]
+forbidden_modules = ["langgraph", "langchain_core", "sqlalchemy", "fastapi", "psycopg", "httpx", "mcp"]

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ARRAY,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -120,3 +121,135 @@ class PolicyChunkRow(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(ARRAY(Float))
+
+
+# --- resolution workflow v2 (migration 0002) ------------------------------------------------------------------
+
+
+class TenantDisputePolicyRow(Base):
+    __tablename__ = "tenant_dispute_policy"
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), primary_key=True)
+    approval_threshold: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    auto_approve_below: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    partial_pct: Mapped[int] = mapped_column(Integer, default=50)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ThreadRow(Base):
+    """One row per graph thread the service starts; the API resolves thread ids only through this table."""
+
+    __tablename__ = "threads"
+    __table_args__ = (
+        Index(
+            "uq_threads_one_active_per_dispute",
+            "dispute_id",
+            "graph",
+            unique=True,
+            postgresql_where="status IN ('running', 'awaiting_approval', 'resume_failed')",
+        ),
+        Index("ix_threads_tenant_dispute", "tenant_id", "dispute_id"),
+        CheckConstraint(
+            "status IN ('running', 'awaiting_approval', 'done', 'failed', 'resume_failed', 'cancelled')",
+            name="ck_threads_status",
+        ),
+    )
+    thread_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    dispute_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("disputes.id"))
+    graph: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20))
+    outcome: Mapped[str | None] = mapped_column(String(60))
+    started_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ApprovalRow(Base):
+    __tablename__ = "approvals"
+    __table_args__ = (
+        Index("ix_approvals_queue", "tenant_id", "status", "priority", "created_at"),
+        CheckConstraint("status IN ('pending', 'approved', 'rejected', 'expired', 'auto')", name="ck_approvals_status"),
+        CheckConstraint("priority IN ('normal', 'urgent')", name="ck_approvals_priority"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    dispute_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("disputes.id"))
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.thread_id"), unique=True)
+    requested_by: Mapped[str] = mapped_column(String(64))
+    required_role: Mapped[str] = mapped_column(String(20))
+    priority: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(10))
+    summary: Mapped[dict[str, object]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    decided_by: Mapped[str | None] = mapped_column(String(64))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class SideEffectRow(Base):
+    __tablename__ = "side_effects"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'succeeded', 'failed', 'unknown')", name="ck_side_effects_status"),
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    dispute_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("disputes.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(10))
+    external_ref: Mapped[str | None] = mapped_column(String(120))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OutboxRow(Base):
+    __tablename__ = "outbox"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"))
+    type: Mapped[str] = mapped_column(String(60))
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB)
+    dedupe_key: Mapped[str] = mapped_column(String(200), unique=True)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuditLogRow(Base):
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_tenant_subject", "tenant_id", "subject"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    actor: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(60))
+    subject: Mapped[str] = mapped_column(String(160))
+    request_id: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    dedupe_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+
+
+class ToolCallRow(Base):
+    """One row per tool-gateway attempt (allowed or denied). Arguments are stored as a hash, never in clear."""
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        Index("ix_tool_calls_tenant_at", "tenant_id", "at"),
+        CheckConstraint("status IN ('ok', 'error', 'retryable_error', 'denied')", name="ck_tool_calls_status"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    tool: Mapped[str] = mapped_column(String(80))
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    approval_id: Mapped[uuid.UUID | None] = mapped_column()
+    attempt: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    args_sha256: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

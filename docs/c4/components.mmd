@@ -1,0 +1,44 @@
+%% C4 level 3 — components inside the API process (T04.6). Arrows point in the allowed import direction.
+flowchart TB
+  subgraph api[app.api]
+    routers[routers: disputes, evidence, assist v1,<br/>resolutions v2, approvals v2, admin]
+    deps[deps: Principal, Ctx, bounded_run]
+  end
+  subgraph boot[app.bootstrap]
+    container[Container<br/>pools, http client, model client,<br/>factories, GraphServices]
+    lifespan[lifespan: checkpointer, compile graphs]
+  end
+  subgraph orch[app.orchestration]
+    assistg[assist graph v2]
+    resg[resolution graph]
+    evg[evidence subgraph]
+    runners[runners + run config]
+    statec[state, reducers, context]
+  end
+  subgraph infra[app.infrastructure]
+    repos[SQL repositories]
+    retr[SqlPolicyStore + embedder]
+    draft[drafters]
+    gw[ToolGateway + MCP clients]
+    appr[approvals, side_effects, audit, outbox]
+  end
+  subgraph appl[app.application]
+    ports[ports / Protocols]
+    usecases[DisputeService, CaseService,<br/>ResolutionService, ApprovalService]
+  end
+  subgraph dom[app.domain]
+    agg[Dispute, Money, reason codes]
+    rules[rules R1–R6, sufficiency, approval policy]
+  end
+  routers --> deps --> container
+  routers --> runners
+  lifespan --> assistg & resg
+  container --> repos & retr & draft & gw & appr
+  assistg & resg --> evg
+  assistg & resg & evg --> statec
+  resg --> rules
+  runners --> statec
+  orch --> ports
+  infra --> ports
+  usecases --> ports --> agg
+  usecases --> rules

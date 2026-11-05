@@ -1,0 +1,48 @@
+# Prometheus alerting rules for the disputes service (T13.9). Series come from /metrics (OpenTelemetry → Prometheus).
+groups:
+  - name: disputes-resolution
+    rules:
+      - alert: ResolutionExecutionFailures
+        expr: sum(increase(resolution_outcomes_total{outcome="EXECUTION_FAILED"}[30m])) > 0
+        for: 0m
+        labels: {severity: page}
+        annotations:
+          summary: "Approved refunds/representments failed to execute"
+          runbook: "docs/recovery.md#recovery-procedure — check tool_calls for the idempotency key; unknown → sweeper reconciles"
+      - alert: ToolCallsMostlyFailing
+        expr: |
+          sum by (tool) (increase(tool_calls_total{status=~"error|retryable_error"}[10m]))
+            / clamp_min(sum by (tool) (increase(tool_calls_total{status!="denied"}[10m])), 1) > 0.2
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.tool }}: more than 20% of calls failing"
+          runbook: "Set APP_TOOLS_ENABLED=false if the provider is down; approvals stay pending and retry later"
+      - alert: ToolCallsDenied
+        expr: sum by (tool) (increase(tool_calls_total{status="denied"}[15m])) > 5
+        for: 0m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Gateway denied {{ $labels.tool }} repeatedly (policy, tenant, approval, pin or rate limit)"
+      - alert: GraphNodeErrors
+        expr: sum by (node, error) (increase(graph_node_errors_total[10m])) > 3
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $labels.node }} raised {{ $labels.error }} more than 3 times in 10m"
+          runbook: "GET /admin/threads/{id}/history for an affected thread; recover with POST /admin/threads/{id}/recover"
+      - alert: AbstentionRateHigh
+        expr: |
+          sum(increase(resolution_outcomes_total{outcome=~"ABSTAINED_.*"}[1h]))
+            / clamp_min(sum(increase(resolution_outcomes_total[1h])), 1) > 0.35
+        for: 30m
+        labels: {severity: ticket}
+        annotations:
+          summary: "More than 35% of resolutions abstain — retrieval or policy content regression?"
+      - alert: ResolutionNodeSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le, node) (rate(graph_node_duration_milliseconds_bucket{graph="resolution"}[10m]))) > 5000
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "p95 of {{ $labels.node }} above 5 s (spec latency budget at risk)"
