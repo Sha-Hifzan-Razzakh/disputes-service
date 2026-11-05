@@ -61,7 +61,7 @@ jobs:
       REF: ${{ needs.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -203,7 +203,7 @@ jobs:
       - if: steps.cfg.outputs.on == 'true'
         uses: docker/setup-buildx-action@v3
       - if: steps.cfg.outputs.on == 'true'
-        uses: astral-sh/setup-uv@v5       # synthetic check after the rollout
+        uses: astral-sh/setup-uv@v7       # synthetic check after the rollout
       - if: steps.cfg.outputs.on == 'true'
         run: uv sync --frozen --no-dev
       - name: promote the staging digest to ECR, migrate, roll out
