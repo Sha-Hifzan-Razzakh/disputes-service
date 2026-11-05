@@ -113,6 +113,7 @@ jobs:
       - name: MCP servers over HTTP with the production client
         run: uv run python scripts/smoke_tools.py
         env:
+          PYTHONPATH: ${{ github.workspace }}   # the project is not installed as a package; scripts import app
           APP_MCP_PAYMENTS_TOKEN: dev-payments-token
           APP_MCP_NETWORK_TOKEN: dev-network-token
       - if: always()
