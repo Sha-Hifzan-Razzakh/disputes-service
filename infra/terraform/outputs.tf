@@ -10,6 +10,14 @@ output "ecr_repository" {
   value = aws_ecr_repository.app.repository_url
 }
 
+output "service_task_definitions" {
+  description = "Task definition each service must be running after a deploy (rollback detection)"
+  value = merge(
+    { api = aws_ecs_task_definition.api.arn },
+    { for k, td in aws_ecs_task_definition.mcp : k => td.arn },
+  )
+}
+
 output "migrate_task_definition" {
   value = aws_ecs_task_definition.migrate.arn
 }

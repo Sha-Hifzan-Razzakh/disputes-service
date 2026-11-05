@@ -18,13 +18,22 @@ fi
 echo "::endgroup::"
 
 echo "::group::rollout"
+rev() { kubectl -n "$NS" get "deploy/$1" -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null || true; }
+declare -A BEFORE
+for d in payments network-gateway api; do BEFORE[$d]=$(rev "$d"); done
 render "$OVERLAY" | kubectl apply -f -
+failed=""
 for d in payments network-gateway api; do
-  if ! kubectl -n "$NS" rollout status "deploy/$d" --timeout=180s; then
-    echo "rollout of $d did not become ready: undoing"
-    kubectl -n "$NS" rollout undo "deploy/$d"
-    kubectl -n "$NS" rollout status "deploy/$d" --timeout=180s
-    exit 1
-  fi
+  kubectl -n "$NS" rollout status "deploy/$d" --timeout=180s || failed="$failed $d"
 done
+if [ -n "$failed" ]; then
+  # undo every Deployment, not only the failed one: the release is one unit (config comes back with the
+  # ReplicaSet because app-config is content-hashed)
+  echo "not ready:$failed -- undoing the whole release"
+  for d in payments network-gateway api; do      # only those this release changed (a no-op apply keeps its revision)
+    [ -n "${BEFORE[$d]}" ] && [ "$(rev "$d")" != "${BEFORE[$d]}" ] && kubectl -n "$NS" rollout undo "deploy/$d"
+  done
+  for d in payments network-gateway api; do kubectl -n "$NS" rollout status "deploy/$d" --timeout=180s; done
+  exit 1
+fi
 echo "::endgroup::"

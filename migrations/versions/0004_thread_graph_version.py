@@ -24,9 +24,13 @@ def upgrade() -> None:
         "threads",
         sa.Column("graph_version", sa.String(length=40), nullable=False, server_default="2.0.0+s1"),
     )
-    op.create_index("ix_threads_graph_version", "threads", ["graph", "graph_version"])
+    with op.get_context().autocommit_block():  # no write lock on a live threads table during a rolling deploy
+        op.create_index(
+            "ix_threads_graph_version", "threads", ["graph", "graph_version"], postgresql_concurrently=True
+        )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_threads_graph_version", table_name="threads")
+    with op.get_context().autocommit_block():
+        op.drop_index("ix_threads_graph_version", table_name="threads", postgresql_concurrently=True)
     op.drop_column("threads", "graph_version")

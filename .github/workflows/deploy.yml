@@ -162,7 +162,7 @@ jobs:
 
   prod:
     needs: [build, staging]
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'   # main only, never a branch
     runs-on: ubuntu-latest
     environment: production        # add required reviewers on this environment in GitHub
     permissions:
@@ -172,12 +172,13 @@ jobs:
     env:
       AWS_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_VAR_certificate_arn: ${{ vars.CERTIFICATE_ARN }}
     steps:
       - name: prod configured?
         id: cfg
         run: |
-          if [ -z "$AWS_ROLE" ]; then
-            echo "Prod not configured (vars.AWS_DEPLOY_ROLE_ARN unset): staging passed; nothing promoted." >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$AWS_ROLE" ] || [ -z "$TF_VAR_certificate_arn" ]; then
+            echo "Prod not configured (vars.AWS_DEPLOY_ROLE_ARN / vars.CERTIFICATE_ARN unset): staging passed; nothing promoted." >> "$GITHUB_STEP_SUMMARY"
             echo "on=false" >> "$GITHUB_OUTPUT"
           else
             echo "on=true" >> "$GITHUB_OUTPUT"
@@ -191,6 +192,20 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - if: steps.cfg.outputs.on == 'true'
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false      # plain stdout for `terraform output -raw`
+      - if: steps.cfg.outputs.on == 'true'
+        uses: docker/login-action@v3    # the source image is in GHCR (private package)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.cfg.outputs.on == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.cfg.outputs.on == 'true'
+        uses: astral-sh/setup-uv@v5       # synthetic check after the rollout
+      - if: steps.cfg.outputs.on == 'true'
+        run: uv sync --frozen --no-dev
       - name: promote the staging digest to ECR, migrate, roll out
         if: steps.cfg.outputs.on == 'true'
         run: scripts/deploy_ecs.sh prod "${{ env.IMAGE }}@${{ needs.build.outputs.digest }}"
