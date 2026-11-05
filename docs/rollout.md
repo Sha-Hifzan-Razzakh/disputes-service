@@ -1,10 +1,14 @@
-# Rollout, deploy notes and rollback (v2.0.0)
+# Rollout, deploy notes and rollback (v2.0.0, v2.1.0)
+
+Automated since 2.1.0: `.github/workflows/deploy.yml` runs these steps (Kubernetes staging via
+`scripts/deploy_k8s.sh`, AWS prod via `scripts/deploy_ecs.sh`); the operator view is `docs/runbook.md`.
+Per-environment differences: `docs/environments.md`.
 
 ## Deploy order
 
 | Step | Command | Notes |
 |---|---|---|
-| 1 | `alembic upgrade head` | `0002` resolution workflow tables (threads, tenant_dispute_policy, approvals, side_effects, outbox, audit_log) → `0003` tool_calls. Additive only: v1 tables untouched, safe before the new code. |
+| 1 | `alembic upgrade head` | `0002` resolution workflow tables (threads, tenant_dispute_policy, approvals, side_effects, outbox, audit_log) → `0003` tool_calls → `0004` threads.graph_version (2.1.0, server default for the previous release). Additive only: safe before the new code. |
 | 2 | `python scripts/checkpoint_setup.py` | LangGraph checkpointer tables (idempotent). `APP_CHECKPOINT_AUTO_SETUP` must be false in staging/prod. |
 | 3 | Seed tenant dispute policy | one `tenant_dispute_policy` row per tenant (approval threshold, partial %, auto-approve limit). Required: without a row the run stops at `load_case` (404 `not_found`). |
 | 4 | Deploy MCP servers | `mcp_servers.payments`, `mcp_servers.network_gateway`, each with its bearer token. |
