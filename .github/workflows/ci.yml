@@ -95,7 +95,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Grype, not Trivy: trivy-action's installer could not download the Trivy binary on the runners (2026-11-04)
-      - uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
+      - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439  # v7.4.2
         with:
           image: disputes-service:${{ github.sha }}
           fail-build: true
