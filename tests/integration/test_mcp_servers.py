@@ -97,3 +97,30 @@ async def test_reviewed_pins_match_the_live_schemas() -> None:
     assert pin_mismatches(live) == {}
     live["payments"]["issue_refund"]["properties"]["reason"] = {"type": "string"}  # an unreviewed change
     assert set(pin_mismatches(live)) == {"payments.issue_refund"}
+
+
+async def test_servers_answer_on_their_service_name_and_refuse_other_hosts(monkeypatch) -> None:
+    """Found by the first staging deploy: the SDK's DNS-rebinding protection only allowed localhost, so every
+    in-cluster call ("Host: network-gateway:8102") got 421. Service names are allowed; other hosts are not."""
+    import httpx
+
+    from mcp_servers import network_gateway, payments
+
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    for mod, host, env in (
+        (payments, "payments:8101", "MCP_PAYMENTS_TOKEN"),
+        (network_gateway, "network-gateway:8102", "MCP_NETWORK_TOKEN"),
+    ):
+        monkeypatch.setenv(env, "t0ken")
+        app = mod.http_app()
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "Authorization": "Bearer t0ken",
+        }
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{host}") as c:
+                ok = await c.post("/mcp", json=body, headers=headers)
+                evil = await c.post("/mcp", json=body, headers=headers | {"Host": "evil.example:80"})
+        assert ok.status_code == 200 and "tools" in ok.text, (host, ok.status_code, ok.text[:200])
+        assert evil.status_code == 421

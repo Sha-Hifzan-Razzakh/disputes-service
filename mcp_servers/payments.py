@@ -11,8 +11,9 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from starlette.applications import Starlette
 
-from mcp_servers.common import FailureInjection, ToolFailure, with_bearer_auth
+from mcp_servers.common import FailureInjection, ToolFailure, transport_security, with_bearer_auth
 
 
 @dataclass
@@ -129,4 +130,15 @@ def create_server(ledger: PaymentsLedger) -> MCPServer:
 
 LEDGER = PaymentsLedger.from_seeds()
 server = create_server(LEDGER)
-app = with_bearer_auth(server.streamable_http_app(stateless_http=True, json_response=True), "MCP_PAYMENTS_TOKEN")
+
+
+def http_app() -> Starlette:
+    return with_bearer_auth(
+        server.streamable_http_app(
+            stateless_http=True, json_response=True, transport_security=transport_security("payments")
+        ),
+        "MCP_PAYMENTS_TOKEN",
+    )
+
+
+app = http_app()
