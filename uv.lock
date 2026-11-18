@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1310,21 +1310,21 @@ wheels = [
 
 [[package]]
 name = "langchain-anthropic"
-version = "1.7.9"
+version = "1.7.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anthropic" },
     { name = "langchain-core" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/21/0e/4f8b371a6a75d6d0a525e2db70efd684903770718d8c4d715e9414983e00/langchain_anthropic-1.7.9.tar.gz", hash = "sha256:132d63718009c5738959070f12d95fb6eac10453f68108ec8865ae38b847cc0c", size = 766186, upload-time = "2026-11-02T20:13:54.163Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/10/4fe4b78ec3f539447fa4774c5e8ef4ffa27c3394c1d93df646418cc97a5a/langchain_anthropic-1.7.10.tar.gz", hash = "sha256:72869686960b3d6665f99e7c91c9f6dd4a1d9ccf73d23edd8702eb603cc2e498", size = 768017, upload-time = "2026-11-04T16:50:53.531Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/35/95342f08a9666513fd91e3090a10ce8022d486d3e1b389b2b22c56688fd6/langchain_anthropic-1.7.9-py3-none-any.whl", hash = "sha256:19a47b299d63b0124128e929458830e90524ddc6c1b578f4cc4a34ee8b1aff95", size = 65545, upload-time = "2026-11-02T20:13:52.757Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/5f/145e047dffdb6778dd633c484f7c176dad6a8a99e11b156321ac2b3b147f/langchain_anthropic-1.7.10-py3-none-any.whl", hash = "sha256:9ba64332784bddedabbeb24f5f5759f2d0dfe58244e0ef07e313e039b21ecb1f", size = 65780, upload-time = "2026-11-04T16:50:52.027Z" },
 ]
 
 [[package]]
 name = "langchain-core"
-version = "1.7.4"
+version = "1.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1339,9 +1339,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uuid-utils" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/25/bd6a5092ec05f7fe7642e7fd3981c8bdfd5a7750f34520b9eee3e9e4b1c0/langchain_core-1.7.4.tar.gz", hash = "sha256:a9b286e12d782dfc1eb17bdbf4228e0f71e7caa6e5d26375eb9ab6723baaf613", size = 1029531, upload-time = "2026-11-02T15:31:17.865Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/e1/7650b9126e1b9ff1dd7110ea5bbdb45de935cb7a5be737a13984d213bb74/langchain_core-1.8.2.tar.gz", hash = "sha256:6d35fae6c7f9946bcb9a8a0fa02a2c176cc958ea264ebc59d2dc5e0b01046f22", size = 1020848, upload-time = "2026-11-17T22:42:40.94Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/dc/8c0e82e0171187f3425b3f7ef962858991ad731b4618d7e814eb72715091/langchain_core-1.7.4-py3-none-any.whl", hash = "sha256:20963807aa074366a3820a5d980399009ac05e17b77105c1e847db3ea3b4829f", size = 577184, upload-time = "2026-11-02T15:31:16.286Z" },
+    { url = "https://files.pythonhosted.org/packages/29/f1/8fe2b596002a8831d0c85998231889051f633591e767026706ea00de8301/langchain_core-1.8.2-py3-none-any.whl", hash = "sha256:11f1047c4b243df746c01c10208082f580bb55f5fbf17bdb38355b6b63c4f63b", size = 588899, upload-time = "2026-11-17T22:42:39.406Z" },
 ]
 
 [[package]]
@@ -1358,7 +1358,7 @@ wheels = [
 
 [[package]]
 name = "langgraph"
-version = "1.2.19"
+version = "1.2.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
@@ -1368,9 +1368,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/10/329dc49ce3fc40e36faafd407f08607fe3fab75613e709a66758b53faac2/langgraph-1.2.19.tar.gz", hash = "sha256:4a00fa1aad2b5fc2d3a789a8e9eaf993f76218ca924b434902ecf1bbaaf300f6", size = 782618, upload-time = "2026-10-30T22:23:32.962Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/90/80e9905d7d010a32d1a8fc6a2d413f039d2179ecf7727f6ebdd3a428fff3/langgraph-1.2.22.tar.gz", hash = "sha256:32700dc34b5cf9ebb397258c2e56392f017d4dbc51c9591339225c3c1b7b5126", size = 799615, upload-time = "2026-11-14T01:43:44.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/9e/bd29e368fb16feea8d24270d377d56c34b49afea371717124f19cdfa890c/langgraph-1.2.19-py3-none-any.whl", hash = "sha256:6094a5cbed52a77d8c74c276fcd2056abde7b2836eab1c7a6b74bacbd1a269b3", size = 262285, upload-time = "2026-10-30T22:23:31.334Z" },
+    { url = "https://files.pythonhosted.org/packages/46/7e/52b1f714b976d344f116ccaae44e2abe4a5602ec849ab4174e3df80f0e2c/langgraph-1.2.22-py3-none-any.whl", hash = "sha256:0f8ebec55a58667e40474a0e55bdb4f06a8c7a1d98cde2b7c8d996a2ee78fe3f", size = 264465, upload-time = "2026-11-14T01:43:42.476Z" },
 ]
 
 [[package]]
@@ -1388,7 +1388,7 @@ wheels = [
 
 [[package]]
 name = "langgraph-checkpoint-postgres"
-version = "3.2.0"
+version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langgraph-checkpoint" },
@@ -1396,9 +1396,9 @@ dependencies = [
     { name = "psycopg" },
     { name = "psycopg-pool" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/45/28/bc0927c2770ab713edc33c4c2f87d1f7b51c344b401d7dda5c8584bd8bf8/langgraph_checkpoint_postgres-3.2.0.tar.gz", hash = "sha256:dffef0e6822d7c614019f7f2c4bdbef42859746aee2d3e6d9d9747cf3744ca90", size = 165780, upload-time = "2026-10-14T19:54:41.116Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/16/1ac32b1d315f96db9a8cb93f427fcdbfb48e1d65409c0af8e29fbc0f26b7/langgraph_checkpoint_postgres-3.2.1.tar.gz", hash = "sha256:d1485fd1d6741fa7dde149a3c8e4373b3cb96c8c46f4140fb907ad79ea8130c3", size = 166488, upload-time = "2026-11-14T01:38:53.082Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/af/07090322c0ac00429ff7f4789b0855e72cbd3c47026ce6b8575f39cd0f9a/langgraph_checkpoint_postgres-3.2.0-py3-none-any.whl", hash = "sha256:4d89526ab3dff0c71d575233e4132327f95812deb07b6c2e75fc473525b5b8fc", size = 55937, upload-time = "2026-10-14T19:54:40.048Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/60/0ad36f48e12d646731108bd8485f5bd494347738f0b274f0c31a89205cdb/langgraph_checkpoint_postgres-3.2.1-py3-none-any.whl", hash = "sha256:77163c33d76c4f4da0362e544ea19350e1acbfd7f612c4152d207af82501aa91", size = 56300, upload-time = "2026-11-14T01:38:51.893Z" },
 ]
 
 [[package]]
